@@ -1,0 +1,459 @@
+---
+title: "A simple social distancing model"
+author: "Caroline Colijn"
+date: "14/03/2020"
+output: 
+  html_document:
+    keep_md: TRUE
+---
+
+
+
+## A building block model without distancing
+
+A very simple model could have 6 compartments: susceptible (S), 
+ exposed but  not infectious (E1), exposed and  infectious but not symptomatic (E2), infectious (I), self-isolated (Q) and recovered (R). This could be called an S E1 E2 I Q R model. Pre-symptomatic transmission occurs in the model (E2 contribute to the force of infection).  There is no social distancing yet but this model is the main building block for a very simple social distancing model. 
+
+
+```r
+seiqrmodel <- function(t,state,pars) {
+  with(as.list(c(state,pars)), { 
+    dSdt = -(R0/(D+1/k2))*(I+E2)*S/N
+    dE1dt = (R0/(D+1/k2))*(I+E2)*S/N - k1*E1
+    dE2dt = k1*E1 -k2*E2
+    dIdt = k2*E2 - q*I-  I/D
+    dQdt = q*I - Q/D 
+    # dRdt = I/D; dr + ds + di =0, S+I+R = N --> R = N-S-I and we eliminate R 
+     list(c(dSdt,dE1dt, dE2dt, dIdt, dQdt ))
+  })
+}
+```
+
+Here is one simulation showing the epidemic curve for this model with some baseline parameters that reflect very little intervention.  
+
+
+```r
+N=2.4e6
+i0=50
+state=c(S=N-i0, E1=0, E2=0, I=i0, Q=0)
+times = seq(0,200, by=0.1) 
+pars=list(N=N,D=5,R0=2.56,k1=1/4, k2=1,q=0 )
+out = as.data.frame(ode(y= state, times=times,  func=seiqrmodel, parms=pars))
+```
+
+
+
+```r
+ggplot(data=out, aes(x=times,y=I+E1+E2))+geom_line()
+```
+
+![](SimpleSocialDistanceModel_files/figure-html/unnamed-chunk-2-1.png)<!-- -->
+
+
+
+
+## Social distancing : MODEL DEFINITION 
+
+Here, there are two "copies" of the S E1 E2 I Q R model. One is as normal and the other has social distancing. People move in and out of the social distancing groups. Social distancing reduces the frequency of contact. 
+
+This model does not have asymptomatic individuals (who never show symptoms but who transmit anyway). 
+
+It makes a number of simplifying assumptions. For example, those who quarantine are quarantined perfectly, but quarantine happens at a  low rate to capture the fact that not everyone will know they have symptoms right away, not everyone will self-isolate, and self-isolation may be imperfect.
+
+In social distancing, all contacts are reduced by a fraction $f$ for all those engaging in social distancing, and so on. This simple model agrees well with more complex models that consider different kinds of contacts (home, work, school, community) with opposing effects under different kinds of social distancing measures. For example, with schools closed, household contact rates may have a slight rise; some community contacts remain even if people work remotely. This model assumes homogeneous mixing in the population, which despite the complexity of human communities, has been shown to do a surprisingly good job of reflecting the dynamics of respiratory viruses. 
+
+The equations are 
+$$ \frac{dS}{dt} = -\left(\frac{R_0}{D+\tfrac{1}{k_2}}\right) (I+E_2 + f (I_d+E_{2d}))\frac{S}{N} - rS + u_r S_d $$ 
+$$  \frac{dE_1}{dt} = \left(\frac{R_0}{D+\tfrac{1}{k_2}}\right) (I+E_2 + f (I_d+E_{2d}))\frac{S}{N} - r E_1 + u_r E_{1d} $$
+$$ \frac{dE_2}{dt} = k_1 E_1 - k_2 E_2 -r E_2 + u_r E_{2d} $$ 
+
+$$ \frac{dI}{dt} = k_2 E_2 - qI-I/D-rI + u_r I_d $$ 
+
+$$ \frac{dQ}{dt} = q I -Q/D - rQ+u_r Q_d $$ 
+
+$$ \frac{dR}{dt} = I/D + Q/D - rR + u_r R_d $$ 
+
+There are 6 more equations just like these for the subscript $d$ compartments; these are socially distancing. They contribute a reduced amount (by a factor $f$) to the force of infection and they ALSO have a reduced contact rate. So for example 
+
+$$ \frac{dS_d}{dt} = -\left(f\frac{R_0}{D+\tfrac{1}{k_2}}\right) (I+E_2 + f (I_d+E_{2d}))\frac{S_d}{N} + rS - u_r S_d $$ 
+and so on -- as above, but with the signs reversed for the $r$ and $u_r$ terms. In this model, a fraction $r/(u+r)$ of the population is engaging in social distancing.  
+
+
+```r
+socdistmodel <- function(t,state,pars,sdtiming) {
+  with(as.list(c(state,pars)), { 
+    f = ifelse(sdtiming(t)==1, pars$f, 1) # if social distancing is on, use pars$f. Otherwise, f is 1. 
+    dSdt = -(R0/(D+1/k2))*(I+E2 + f*(Id+E2d))*S/N - r*S + ur*Sd
+    dE1dt = (R0/(D+1/k2))*(I+E2 + f*(Id+E2d))*S/N - k1*E1 -r*E1 + ur*E1d
+    dE2dt = k1*E1 -k2*E2 -r*E2 + ur*E2d
+    dIdt = k2*E2 - q*I -  I/D - r*I+ ur*Id
+    dQdt = q*I - Q/D -r*Q + ur*Qd
+    dRdt = I/D + Q/D -r*R+ur*Rd
+    
+    dSddt = -(f*R0/(D+1/k2))*(I+E2 + f*(Id+E2d))*Sd/N + r*S -ur*Sd
+    dE1ddt = (f*R0/(D+1/k2))*(I+E2 + f*(Id+E2d))*Sd/N - k1*E1d +r*E1 - ur*E1d
+    dE2ddt = k1*E1d - k2*E2d + r*E2 - ur*E2d
+    dIddt = k2*E2d - q*Id-  Id/D + r*I - ur*Id
+    dQddt = q*Id - Qd/D +r*Q - ur*Qd
+   dRddt = Id/D+Qd/D +r*R - ur*Rd
+    # dRdt = I/D; dr + ds + di =0, S+I+R = N --> R = N-S-I and we eliminate R 
+     list(c(dSdt,dE1dt, dE2dt, dIdt, dQdt,dRdt, dSddt,dE1ddt, dE2ddt, dIddt, dQddt,dRddt ))
+  })
+}
+```
+
+Here are just two simulations. In the black curve, after 60 days, social distancing stops, and the curve grows again. 
+
+
+```r
+startTime=10; stopTime=60
+N=2.4e6
+pars=list(N=N,D=5,R0=2.5,k1=1/4, k2=1,q=0.08, r=1, ur=0.8, f=0.6)
+mysdtiming=function(t) {ifelse( (t > startTime & t< stopTime),1, 0) }
+
+fsi=with(pars, r/(r+ur))
+nsi=1-fsi
+state=c(S= nsi*(N-i0), E1=0.4*nsi*i0, E2=0.1*nsi*i0, I=0.5*nsi*i0, Q=0, R=0, 
+        Sd= fsi*(N-i0), E1d=0.4*fsi*i0, E2d=0.1*fsi*i0, Id=0.5*fsi*i0, Qd=0, Rd=0)
+
+times=0:400
+i0=50
+nReps=50
+out1 = as.data.frame(ode(y= state, times=times,  func=socdistmodel, parms=pars,
+          sdtiming=mysdtiming))
+stopTime=200; mysdtiming=function(t) {ifelse( (t > startTime & t< stopTime),1, 0) }
+out2=  as.data.frame(ode(y= state, times=times,  func=socdistmodel, parms=pars,
+          sdtiming=mysdtiming))
+ggplot(data=filter(out1,time<90), aes(x=time, y=(E2+I+E2d+Id)))+geom_line() +
+  geom_line(data=filter(out2,time<90), aes(x=time, y=(E2+I+E2d+Id)),color="blue")
+```
+
+![](SimpleSocialDistanceModel_files/figure-html/two-sims-1.png)<!-- -->
+ 
+ 
+## Uncertainty
+
+One of the key parameters in an epidemic model is the basic reproduction number, R0. This is the average number of new infections per infected individual in a completely susceptible population (here, we think of R0 as the basic reproduction number in the absence of interventions like social distancing so that we have a baseline). We think that R0 for COVID19 is between 2 and 3. 
+In these simulations we capture some of the considerable uncertainty by resampling R0 (normal, mean 2.5, sd 0.25)-- though this can be flexible. The 'multisolve' function simulates the model 50 times, each with a different R0 value. 
+
+Here are functions to run 50 copies of the model, extract key outputs and make plots. For example we can create 3 plots with a ribbon, each taken from a collection of simulations around our parameters. The most uncertain parameter is R0, the basic reproduction number. Changes in other parameters typically change this one, so we have parameterized the model with R0 explicitly and we use sampling different R0s to explore some of the uncertainty in the model. 
+
+
+
+
+
+## Model simulation
+
+
+This code is structured to take a baseline and compare 3 values of the social distancing strength.
+
+
+
+```r
+N=2.4e6
+pars=list(N=N,D=5,R0=2.5,k1=1/4, k2=1,q=0, r=1, ur=0.8, f=0.6)
+fsi=with(pars, r/(r+ur))
+nsi=1-fsi
+state=c(S= nsi*(N-i0), E1=0.4*nsi*i0, E2=0.1*nsi*i0, I=0.5*nsi*i0, Q=0, R=0, 
+        Sd= fsi*(N-i0), E1d=0.4*fsi*i0, E2d=0.1*fsi*i0, Id=0.5*fsi*i0, Qd=0, Rd=0)
+
+times=0:400
+i0=50
+nReps=50
+```
+
+
+
+
+```r
+# set up 3 sets of parameters to explore no, medium and strong social distancing
+bpars=list(); timelist=list()
+bpars[[1]]=pars; bpars[[1]]$f=1
+timelist[[1]]=function(t) {ifelse( (t > 5 & t< 1000),1, 0) }
+bpars[[2]]=pars; bpars[[2]]$f=0.8
+timelist[[2]]=function(t) {ifelse( (t > 5 & t< 1000),1, 0) }
+bpars[[3]]=pars; bpars[[3]]$f=0.6
+timelist[[3]]=function(t) {ifelse( (t > 5 & t< 1000),1, 0) }
+# set up timing information: when do we stop and start social distancing? 
+
+tt2=lapply(1:3,function(x) multisolve(params=bpars[[x]],timing = timelist[[x]], state,times, nReps = nReps))
+names(tt2)=c(bpars[[1]]$f, bpars[[2]]$f,bpars[[3]]$f)
+```
+
+Extract cases by day for plots (and spreadsheets if required) 
+
+
+```r
+cbd1 = getCasesbyDay2(tt2[[1]], times,nReps)
+cbd2 = getCasesbyDay2(tt2[[2]], times,nReps)
+cbd3 = getCasesbyDay2(tt2[[3]], times,nReps)
+```
+
+## Step 1: the baseline curve with no measures taken
+
+Here is the first of these three simulations. 
+
+
+```r
+N=bpars[[1]]$N
+mydf=filter(getAllCasesbyDay2(tt2[[1]],times,nReps), times<210)
+ggplot(data=mydf) + geom_line(aes(x=dates,y=median/N))+
+  geom_ribbon(aes(x=dates,ymin = lower25/N, ymax = upper75/N), alpha = 0.5,fill="grey") +
+  theme_bw()+ylab("Fraction infectious")+ylim(c(0,0.3))
+```
+
+![](SimpleSocialDistanceModel_files/figure-html/unnamed-chunk-4-1.png)<!-- -->
+
+Here is a plot showing the cumulative number who have been infected (this now includes those who are still in the incubation period) 
+
+
+```r
+N=bpars[[1]]$N
+mydf=filter(getEverInfbyDay(tt2[[1]],times,nReps), times<210)
+ggplot(data=mydf) + geom_line(aes(x=dates,y=median/N))+
+  geom_ribbon(aes(x=dates,ymin = lower25/N, ymax = upper75/N), alpha = 0.5,fill="grey") +
+  theme_bw()+ylab("Cumulative infected")+ylim(c(0,1))
+```
+
+![](SimpleSocialDistanceModel_files/figure-html/unnamed-chunk-5-1.png)<!-- -->
+
+
+
+
+## Step 2
+
+This shows a medium-scale social distancing. For example, suppose that we reduce school contacts by 10% by leaving school open but introducing additional measures in schools. Some workplaces remain open while others reduce  (say 40% overall). Community contacts reduce by 25% due to reduced mass gatherings and measures taken for gathering places.  We have to guess at some key inputs.  Imagine that relevant contacts for transmission break down as: 25% household, 40% school/work, and 35% broader community (cafe, social occasions, restaurants, transit, shopping, exercise, etc). While these are coarse guesses, the results in this simple model agree quite well with the recent Imperial College London report which used a much more complex model. 
+
+
+
+```r
+hh=0.25; school=0.25*0.4; work=0.75*0.4; community=0.35; # portion contacts 
+f = hh*1 + school*0.9 + work*0.65 + community*0.75
+f
+```
+
+```
+## [1] 0.7975
+```
+
+
+```r
+N=bpars[[2]]$N
+mydf=filter(getAllCasesbyDay2(tt2[[2]],times,nReps), times<210)
+ggplot(data=mydf) + geom_line(aes(x=dates,y=median/N))+
+  geom_ribbon(aes(x=dates,ymin = lower25/N, ymax = upper75/N), alpha = 0.5,fill="blue") +
+  theme_bw()+ylab("Fraction infectious")+ylim(c(0,0.3))
+```
+
+![](SimpleSocialDistanceModel_files/figure-html/unnamed-chunk-7-1.png)<!-- -->
+
+Here are the cumulative numbers infected. 
+
+
+```r
+N=bpars[[1]]$N
+mydf=filter(getEverInfbyDay(tt2[[2]],times,nReps), times<210)
+ggplot(data=mydf) + geom_line(aes(x=dates,y=median/N))+
+  geom_ribbon(aes(x=dates,ymin = lower25/N, ymax = upper75/N), alpha = 0.5,fill="blue") +
+  theme_bw()+ylab("Cumulative infected")+ylim(c(0,1))
+```
+
+![](SimpleSocialDistanceModel_files/figure-html/unnamed-chunk-8-1.png)<!-- -->
+
+## Step 3: Strong broad social distancing interventions
+
+Here social contacts are strongly reduced. For example, suppose that we reduce school contacts by 90% by closing schools (some children still see each other socially), this increases household contacts and community contacts somewhat; some workplaces remain open while others reduce dramatically (say 60% overall) and as a result of workplace closures, again 'other' contacts increase somewhat. We have to guess at key inputs.  Imagine that contacts break down as: 25% household, 40% school/work, and 35% broader community (cafe, social occasions, restaurants, transit, shopping, exercise, etc). Closure of many of these reduces community contact, say by 70%. 
+
+```r
+hh=0.25; school=0.25*0.4; work=0.75*0.4; community=0.35; # portion contacts 
+f = hh*1.45 + school*0.1 + work*0.35 + community*0.35
+f
+```
+
+```
+## [1] 0.6
+```
+
+
+
+```r
+N=bpars[[3]]$N # actually resetting N isn't necessary, but it's good practice
+mydf=filter(getAllCasesbyDay2(tt2[[3]],times,nReps), times<260)
+ggplot(data=mydf) + geom_line(aes(x=dates,y=median/N))+
+  geom_ribbon(aes(x=dates,ymin = lower25/N, ymax = upper75/N), alpha = 0.5,fill="green") +
+  theme_bw()+ylab("Fraction infectious")+ylim(c(0,0.3))
+```
+
+![](SimpleSocialDistanceModel_files/figure-html/unnamed-chunk-10-1.png)<!-- -->
+
+
+And cumulative infected: 
+
+
+```r
+N=bpars[[1]]$N
+mydf=filter(getEverInfbyDay(tt2[[3]],times,nReps), times<260)
+ggplot(data=mydf) + geom_line(aes(x=dates,y=median/N))+
+  geom_ribbon(aes(x=dates,ymin = lower25/N, ymax = upper75/N), alpha = 0.5,fill="green") +
+  theme_bw()+ylab("Cumulative infected")+ylim(c(0,1))
+```
+
+![](SimpleSocialDistanceModel_files/figure-html/unnamed-chunk-11-1.png)<!-- -->
+
+## Comparisons and the early phase 
+
+Here we show three social distancing scenarios on the same plot for comparison, and we show the early rise. In most of the above plots, it looks like there are no cases in the first few months, but this is misleading. It's not that there are no cases, it's just that the numbers grow so high later that we can't see the rises in the early phase unless we zoom in on that time period. 
+
+
+
+```r
+ll=makePlots(tt2,type="all",PopScale = TRUE,popSize =pars$N)
+grid.arrange(ll[[1]], ll[[2]])
+```
+
+![](SimpleSocialDistanceModel_files/figure-html/unnamed-chunk-12-1.png)<!-- -->
+
+
+## Step 4 what happens if social distancing is turned off at a fixed time? 
+
+ In these plots, the fact that social distancing ended after 200 days in the green one (and not the others) leads to  the green curve bulging upwards. By that point there is already some immunity in the population so the peak is not as high as it would have been if we had done nothing (grey). Note that the y axis has the number in the infectious classes at each time - not the total over the whole epidemic. 
+
+
+
+
+
+```r
+newtime=function(t) {ifelse( (t > 5 & t< 200),1, 0) }
+newsol= multisolve(params=bpars[[3]],timing = newtime, state,times, nReps = nReps)
+mydf=getAllCasesbyDay2(newsol,times,nReps)
+ggplot(data=mydf) + geom_line(aes(x=dates,y=median/N))+
+  geom_ribbon(aes(x=dates,ymin = lower25/N, ymax = upper75/N), alpha = 0.5,fill="purple") +
+  theme_bw()+ylab("Fraction infectious")+ylim(c(0,0.3))
+```
+
+![](SimpleSocialDistanceModel_files/figure-html/unnamed-chunk-13-1.png)<!-- -->
+
+What if it is turned off at 100 days instead? (dark green fill, below). 
+
+
+```r
+new2=function(t) {ifelse( (t > 5 & t< 100),1, 0) }
+new2sol= multisolve(params=bpars[[3]],timing = new2, state,times, nReps = nReps)
+mydf2=getAllCasesbyDay2(new2sol,times,nReps)
+ggplot(data=mydf) + geom_line(aes(x=dates,y=median/N))+
+  geom_ribbon(aes(x=dates,ymin = lower25/N, ymax = upper75/N), alpha = 0.5,fill="purple") +
+  geom_line(data=mydf2, aes(x=dates,y=median/N))+
+  geom_ribbon(data=mydf2,aes(x=dates,ymin=lower25/N, ymax = upper75/N), alpha = 0.5,fill="darkgreen")+
+  theme_bw()+ylab("Fraction infectious")+ylim(c(0,0.3))
+```
+
+![](SimpleSocialDistanceModel_files/figure-html/unnamed-chunk-14-1.png)<!-- -->
+
+
+## Step 5: "Planking" the curve
+
+Here we explore the "planking" idea -- social distancing that is strong enough that we are likely to stop exponential growth in its tracks. 
+
+
+```r
+newtime=function(t) {ifelse( (t > 5 & t< 400),1, 0) }
+strongpars = list(N=N,D=5,R0=2.5,k1=1/4, k2=1,q=0, r=1, ur=0.4, f=0.46)
+# imports = rpois(length(times), lambda = 1.5)
+newsol= multisolve(params=strongpars,timing = newtime, state,times, nReps = nReps)
+mydf=getAllCasesbyDay2(newsol,times,nReps)
+ggplot(data=mydf) + geom_line(aes(x=dates,y=(median)/N))+
+  geom_ribbon(aes(x=dates,ymin = (lower25+qpois(0.25,2))/N, ymax = (upper75+qpois(0.75,2))/N), alpha = 0.5,fill="chocolate2") +
+  theme_bw()+ylab("Fraction infectious") #+ylim(c(0,0.3))
+```
+
+![](SimpleSocialDistanceModel_files/figure-html/unnamed-chunk-15-1.png)<!-- -->
+
+
+
+
+
+### Step 5b Better than planking: suppression
+
+Here, most of the population engages in strong social distancing. While household contact rates go up, community and workplace contacts fall to only 10% of their usual levels. If 1/5 of the contacts are household, and these increase by 50%, and the rest of the contacts are reduced to 10% of their baseline, we'd have  $f = (0.2(Raise) + 0.8(Fall))$ which is 0.34. This reduces the reproduction number to below 1, and cases fall. Case counts are now driven by the time lag (for 2-3 weeks we still see new cases appear, because they were infected before distancing measures took hold). Furthermore, sporadic cases enter from other areas, particularly if we re-open borders and other areas do not have as good control as we do (in this hypothetical scenario). Here, since we have no meaningful build-up of immunity, as soon as we scale back social distancing we see the same curves that we had above, but they happen later. We visualize stochastic importations (but it's cheating a little). They aren't transmitting in the model; since we know here that sustained transmission is not possible in this population, each importation will give rise to some small number of new cases; we use a Poisson distribution to visualize this. 
+
+
+```r
+newtime=function(t) {ifelse( (t > 5 & t< 400),1, 0) }
+strongpars = list(N=N,D=5,R0=2.5,k1=1/4, k2=1,q=0, r=1, ur=0.4, f=0.38)
+imports = rpois(length(times), lambda = 3.5)
+newsol= multisolve(params=strongpars,timing = newtime, state,times, nReps = nReps)
+mydf=getAllCasesbyDay2(newsol,times,nReps)
+ggplot(data=mydf) + geom_line(aes(x=dates,y=(median+imports)/N))+
+  geom_ribbon(aes(x=dates,ymin = (lower25+qpois(0.25,3.5))/N, ymax = (upper75+qpois(0.75,3.5))/N), alpha = 0.5,fill="chocolate2") +
+  theme_bw()+ylab("Fraction infectious") #+ylim(c(0,0.3))
+```
+
+![](SimpleSocialDistanceModel_files/figure-html/unnamed-chunk-16-1.png)<!-- -->
+
+
+And now what happens if the curve falls, people get complacent, and measures are relaxed? 
+
+
+```r
+newtime=function(t) {ifelse( (t > 5 & t< 60) ,1, 0) }
+strongpars = list(N=N,D=5,R0=2.5,k1=1/4, k2=1,q=0, r=1, ur=0.4, f=0.38)
+imports = rpois(length(times), lambda = 1.5)
+newsol= multisolve(params=strongpars,timing = newtime, state,times, nReps = nReps)
+```
+
+
+```r
+mydf=getAllCasesbyDay2(newsol,times,nReps)
+ggplot(data=filter(mydf, times<70)) + geom_line(aes(x=dates,y=(median+imports[1:70])/N))+
+  geom_ribbon(aes(x=dates,ymin = (lower25+qpois(0.25,2))/N, ymax = (upper75+qpois(0.75,2))/N), alpha = 0.5,fill="chocolate2") +
+  theme_bw()+ylab("Fraction infectious") #+ylim(c(0,0.3))
+```
+
+![](SimpleSocialDistanceModel_files/figure-html/unnamed-chunk-18-1.png)<!-- -->
+
+
+## Step 6: Smaller population and/or effect of unknown infections
+
+Quite severe measures in China and elsewhere, together with contact tracing, door to door follow up and isolation, kept numbers low and some peaks were fast. In models like the ones here, which consider large populations as homogeneously mixing (anyone can potentially contact anyone else), it takes more time for an outbreak peak to rise and fall than it does in a much smaller population. This is because the first 10 or 100 cases are a tiny fraction of a city of millions, but the first 10 cases are a much larger fraction of a population of hundreds.  In a tightly controlled population, not only are contacts reduced, but the population connectedness may be disrupted. We could simulate this using a smaller population -- the one the virus gets a chance to spread to.
+
+Similarly, if we start the model with many more exposed or infectious individuals than we know about, we will see an earlier peak again because a higher fraction of the population is already infected so the rise happens sooner. This could occur in the current situation if it were the case that many asymptomatic (or weakly symptomatic) individuals have COVID19 and are developing immunity already without being detected. 
+
+
+
+
+```r
+newtime=function(t) {ifelse( (t > 5 & t< 500),1, 0) }
+smallN=3000
+smallpars  = list(N=smallN,D=5,R0=2.5,k1=1/4, k2=1,q=0, r=1, ur=0.4, f=0.64)
+i0=5
+fsi=with(pars, r/(r+ur))
+nsi=1-fsi
+smallstate=c(S= nsi*(smallN-i0), E1=0.4*nsi*i0, E2=0.1*nsi*i0, I=0.5*nsi*i0, Q=0, R=0, 
+        Sd= fsi*(smallN-i0), E1d=0.4*fsi*i0, E2d=0.1*fsi*i0, Id=0.5*fsi*i0, Qd=0, Rd=0)
+newsol= multisolve(params=smallpars,timing = newtime, smallstate,times, nReps = nReps)
+mydf=getAllCasesbyDay2(newsol,times,nReps)
+ggplot(data=mydf) + geom_line(aes(x=dates,y=median/smallN))+
+  geom_ribbon(aes(x=dates,ymin = lower25/smallN, ymax = upper75/smallN), alpha = 0.5,fill="purple") +
+  theme_bw()+ylab("Fraction infectious")#+ylim(c(0,0.3))
+```
+
+![](SimpleSocialDistanceModel_files/figure-html/unnamed-chunk-19-1.png)<!-- -->
+
+
+Unfortunately, a wider, flatter, curve is just a series of these little bumps, piling on one after the other, and on top of each other. Unless we **really** prevent the small sub-populations having any contact with each other, we are back to the wide, slow curves in models for bigger well-mixed populations. Whether China sees resurgence after normal activities resume will be interesting to see; it would require preventing imported cases.  
+
+## Limitations and discussion
+
+There are many limitations here and we cannot discuss them all. There are myriad ways that we could ask "but what about ...?" for this kind of modelling: what about individual households? Schools? Workplaces? Transit? Restaurants? Cafes? Playgrounds, nightclubs, bakeries, healthcare settings? Age groups and different mixing patterns? Reducing contacts in some of these while leaving others alone results in an intermediate level of mixing. Reducing contacts in all of them results in strong distancing. In reality, decreasing some may increase others -- for example, household and community contacts increasing when people stay home from work or school. 
+
+We deliberately did not model these things explicitly. The results agree overall with those who did model some of this complexity (see the Imperial College London report at https://www.imperial.ac.uk/media/imperial-college/medicine/sph/ide/gida-fellowships/Imperial-College-COVID19-NPI-modelling-16-03-2020.pdf
+
+Modelling these requires both assumptions and high-quality data. Unless there is great data, the results of highy sophisticated models may not be better, and in any case may not even be different, than the results of simple models. Simple models are easier to understand, and it is feasible and quick to explore the effects of  uncertainty in key parameters like R0 in simple models. The uncertainty in R0 whose effects are illustrated here is considerable. Adding complexity where there is little data to inform the model will not reduce uncertainty, but it will make that uncertainty harder to represent. 
+
+We did not explicitly model uncertainty in the durations of the compartments. However, unless the numbers are all wrong in the same direction, the qualitative results here will not be much affected. Furthermore, the overall time scale (a few weeks from infection to recovery) is well established and this sets the peak timing and so on. 
+
+Two of the largest remaining uncertainties are (1) the effect that real social distancing is having (and how long we can carry on for), and (2) the role of asymptomatic or weakly symptomatic individuals, particularly if they are numerous and are already gaining immunity. If there are many such people the peaks would be earlier and lower. 
+
+This work was the basis for the figures in the article at https://www.theglobeandmail.com/business/technology/science/article-when-does-social-distancing-end-these-graphs-show-where-were-heading/. 
+
+
