@@ -437,7 +437,7 @@ Here, most of the population engages in strong social distancing. While househol
 
 ```{r}
 newtime=function(t) {ifelse( (t > 5 & t< 400),1, 0) }
-strongpars = list(N=N,D=5,R0=2.5,k1=1/4, k2=1,q=0, r=1, ur=0.4, f=0.38)
+strongpars = list(N=N,D=5,R0=2.5,k1=1/4, k2=1,q=008, r=1, ur=0.4, f=0.38)
 imports = rpois(length(times), lambda = 3.5)
 newsol= multisolve(params=strongpars,timing = newtime, state,times, nReps = nReps)
 mydf=getAllCasesbyDay2(newsol,times,nReps)
@@ -464,6 +464,171 @@ ggplot(data=filter(mydf, times<70)) + geom_line(aes(x=dates,y=(median+imports[1:
 ```
 
 
+## Step 5c introduction of social distancing is slower
+
+Here, social distancing takes place over a week with a linear decline in f. 
+
+```{r socdist-linear}
+socdist2 <- function(t,state,pars,sdprofile) {
+  with(as.list(c(state,pars)), { 
+#    f = ifelse(sdtiming(t)==1, pars$f, 1) # if social distancing is on, use pars$f. Otherwise, f is 1.
+    f=sdprofile(t)
+    dSdt = -(R0/(D+1/k2))*(I+E2 + f*(Id+E2d))*S/N - r*S + ur*Sd
+    dE1dt = (R0/(D+1/k2))*(I+E2 + f*(Id+E2d))*S/N - k1*E1 -r*E1 + ur*E1d
+    dE2dt = k1*E1 -k2*E2 -r*E2 + ur*E2d
+    dIdt = k2*E2 - q*I -  I/D - r*I+ ur*Id
+    dQdt = q*I - Q/D -r*Q + ur*Qd
+    dRdt = I/D + Q/D -r*R+ur*Rd
+    
+    dSddt = -(f*R0/(D+1/k2))*(I+E2 + f*(Id+E2d))*Sd/N + r*S -ur*Sd
+    dE1ddt = (f*R0/(D+1/k2))*(I+E2 + f*(Id+E2d))*Sd/N - k1*E1d +r*E1 - ur*E1d
+    dE2ddt = k1*E1d - k2*E2d + r*E2 - ur*E2d
+    dIddt = k2*E2d - q*Id-  Id/D + r*I - ur*Id
+    dQddt = q*Id - Qd/D +r*Q - ur*Qd
+   dRddt = Id/D+Qd/D +r*R - ur*Rd
+    # dRdt = I/D; dr + ds + di =0, S+I+R = N --> R = N-S-I and we eliminate R 
+     list(c(dSdt,dE1dt, dE2dt, dIdt, dQdt,dRdt, dSddt,dE1ddt, dE2ddt, dIddt, dQddt,dRddt ))
+  })
+}
+```
+
+
+```{r}
+multisolve2=function(params,timing,state,times,nReps) {
+ # get random samples of R0
+  
+  rs=rnorm(nReps, mean = params$R0, sd=0.2)
+  biglist=lapply(rs, function(x) { 
+    thispars=params; thispars$R0=x; 
+    return( as.data.frame(ode(y= state, times=times,  func=socdist2, parms=thispars,sdprofile=timing)))})
+  names(biglist)=rs;
+  return(bind_rows(biglist, .id="R0"))
+}
+```
+
+
+
+```{r}
+# now I just want f(t) as my timing function 
+
+strongpars = list(N=N,D=5,R0=2.5,k1=1/4, k2=1,q=0.08, r=1, ur=0.5, f=0.4)
+
+newtime=function(t) {
+  if (t < 15) return(1)
+  if (t >=15 & t < 22) return( 1 - (1/7)*(1-0.4)*(t-15) )
+  if (t>=22 & t < 60) return(0.4)
+  if (t>=60) return(1)
+  }
+
+fsi=with(strongpars, r/(r+ur))
+nsi=1-fsi
+state=c(S= nsi*(N-i0), E1=0.4*nsi*i0, E2=0.1*nsi*i0, I=0.5*nsi*i0, Q=0, R=0, 
+        Sd= fsi*(N-i0), E1d=0.4*fsi*i0, E2d=0.1*fsi*i0, Id=0.5*fsi*i0, Qd=0, Rd=0)
+
+
+times=0:80
+i0=50
+nReps=50
+
+tmp = as.data.frame(ode(y= state, times=times,  func=socdist2, parms=strongpars,sdprofile=newtime))
+imports = rpois(length(times), lambda = 1.5)
+
+newsol= multisolve2(params=strongpars,timing = newtime, state,times, nReps = nReps)
+```
+
+
+
+
+```{r}
+mydf=getAllCasesbyDay2(newsol,times,nReps)
+ggplot(data=filter(mydf, times<80)) + geom_line(aes(x=dates,y=(median+imports[1:80])/N))+
+  geom_ribbon(aes(x=dates,ymin = (lower25+qpois(0.25,2))/N, ymax = (upper75+qpois(0.75,2))/N), alpha = 0.5,fill="chocolate2") +
+  theme_bw()+ylab("Fraction infectious") #+ylim(c(0,0.3))
+```
+
+
+
+
+
+```{r}
+mydf=getAllCasesbyDay2(newsol,times,nReps)
+ggplot(data=filter(mydf, times<80)) + geom_line(aes(x=dates,y=(median+imports[1:80])/N))+
+  geom_ribbon(aes(x=dates,ymin = (lower25+qpois(0.25,2))/N, ymax = (upper75+qpois(0.75,2))/N), alpha = 0.5,fill="chocolate2") +
+geom_rect(aes(xmin=lubridate::ymd("2020-03-14")+15,
+                xmax=lubridate::ymd("2020-03-15")+60),
+                  ymin=0, ymax=3e-4,
+            fill='blue', alpha=.005)  +
+  theme_bw()+ylab("Fraction infectious") 
+```
+
+
+
+ANd now one where SD is not turned off 
+
+
+
+
+
+```{r}
+# now I just want f(t) as my timing function 
+
+strongpars = list(N=N,D=5,R0=2.5,k1=1/4, k2=1,q=0.08, r=1, ur=0.5, f=0.4)
+
+newtime=function(t) {
+  if (t < 15) return(1)
+  if (t >=15 & t < 22) return( 1 - (1/7)*(1-0.4)*(t-15) )
+  if (t>=22 & t < 60) return(0.4)
+  if (t>=60) return(0.4)
+  }
+
+fsi=with(strongpars, r/(r+ur))
+nsi=1-fsi
+state=c(S= nsi*(N-i0), E1=0.4*nsi*i0, E2=0.1*nsi*i0, I=0.5*nsi*i0, Q=0, R=0, 
+        Sd= fsi*(N-i0), E1d=0.4*fsi*i0, E2d=0.1*fsi*i0, Id=0.5*fsi*i0, Qd=0, Rd=0)
+
+
+times=0:80
+i0=50
+nReps=50
+
+tmp = as.data.frame(ode(y= state, times=times,  func=socdist2, parms=strongpars,sdprofile=newtime))
+imports = rpois(length(times), lambda = 1.5)
+
+newsol= multisolve2(params=strongpars,timing = newtime, state,times, nReps = nReps)
+```
+
+
+
+
+```{r}
+mydf=getAllCasesbyDay2(newsol,times,nReps)
+ggplot(data=filter(mydf, times<80)) + geom_line(aes(x=dates,y=(median+imports[1:80])/N))+
+  geom_ribbon(aes(x=dates,ymin = (lower25+qpois(0.25,2))/N, ymax = (upper75+qpois(0.75,2))/N), alpha = 0.5,fill="chocolate2") +
+  theme_bw()+ylab("Fraction infectious") #+ylim(c(0,0.3))
+```
+
+
+
+
+
+```{r}
+mydf=getAllCasesbyDay2(newsol,times,nReps)
+ggplot(data=filter(mydf, times<80)) + geom_line(aes(x=dates,y=(median+imports[1:80])/N))+
+  geom_ribbon(aes(x=dates,ymin = (lower25+qpois(0.25,2))/N, ymax = (upper75+qpois(0.75,2))/N), alpha = 0.5,fill="chocolate2") +
+geom_rect(aes(xmin=lubridate::ymd("2020-03-14")+15,
+                xmax=lubridate::ymd("2020-03-15")+76),
+                  ymin=0, ymax=3e-4,
+            fill='blue', alpha=.005)  +
+  theme_bw()+ylab("Fraction infectious") 
+```
+
+
+
+
+
+
+
+
 ## Step 6: Smaller population and/or effect of unknown infections
 
 Quite severe measures in China and elsewhere, together with contact tracing, door to door follow up and isolation, kept numbers low and some peaks were fast. In models like the ones here, which consider large populations as homogeneously mixing (anyone can potentially contact anyone else), it takes more time for an outbreak peak to rise and fall than it does in a much smaller population. This is because the first 10 or 100 cases are a tiny fraction of a city of millions, but the first 10 cases are a much larger fraction of a population of hundreds.  In a tightly controlled population, not only are contacts reduced, but the population connectedness may be disrupted. We could simulate this using a smaller population -- the one the virus gets a chance to spread to.
@@ -474,7 +639,7 @@ Similarly, if we start the model with many more exposed or infectious individual
 
 ```{r}
 newtime=function(t) {ifelse( (t > 5 & t< 500),1, 0) }
-smallN=3000
+smallN=300
 smallpars  = list(N=smallN,D=5,R0=2.5,k1=1/4, k2=1,q=0, r=1, ur=0.4, f=0.64)
 i0=5
 fsi=with(pars, r/(r+ur))
