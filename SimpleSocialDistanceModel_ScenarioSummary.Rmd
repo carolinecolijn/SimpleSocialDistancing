@@ -1,0 +1,864 @@
+---
+title: "Scenario summary of social distancing models"
+subtitle: 'Detailing model parameters and impact of each example scenario'
+author: 
+- "Caroline Colijn"
+- "Bo Wen"
+date: "02/04/2020"
+output: 
+  html_document:
+    keep_md: TRUE
+    self_contained: TRUE
+    toc: TRUE
+    toc_depth: 2
+---
+
+```{r init, echo=FALSE, message=FALSE}
+library(deSolve)
+library(ggplot2)
+library(dplyr)
+library(gridExtra)
+library(lubridate)
+```
+
+```{r simple-defn, echo=FALSE, message=FALSE}
+# A very simple model could have 6 compartments: susceptible (S), 
+#  exposed but  not infectious (E1), exposed and  infectious but not symptomatic (E2), infectious (I), self-isolated (Q) and recovered (R). This could be called an S E1 E2 I Q R model. Pre-symptomatic transmission occurs in the model (E2 contribute to the force of infection).  There is no social distancing yet but this model is the main building block for a very simple social distancing model. 
+ 
+seiqrmodel <- function(t,state,pars) {
+  with(as.list(c(state,pars)), { 
+    dSdt = -(R0/(D+1/k2))*(I+E2)*S/N
+    dE1dt = (R0/(D+1/k2))*(I+E2)*S/N - k1*E1
+    dE2dt = k1*E1 -k2*E2
+    dIdt = k2*E2 - q*I-  I/D
+    dQdt = q*I - Q/D 
+    # dRdt = I/D; dr + ds + di =0, S+I+R = N --> R = N-S-I and we eliminate R 
+     list(c(dSdt,dE1dt, dE2dt, dIdt, dQdt ))
+  })
+}
+```
+
+```{r socdistmodel-defn, echo=FALSE, message=FALSE}
+# A version of the seiqrmodel with social distancing parameter f
+
+socdistmodel <- function(t,state,pars,sdtiming) {
+  with(as.list(c(state,pars)), { 
+    f = ifelse(sdtiming(t)==1, pars$f, 1) # if social distancing is on, use pars$f. Otherwise, f is 1. 
+    dSdt = -(R0/(D+1/k2))*(I+E2 + f*(Id+E2d))*S/N - r*S + ur*Sd
+    dE1dt = (R0/(D+1/k2))*(I+E2 + f*(Id+E2d))*S/N - k1*E1 -r*E1 + ur*E1d
+    dE2dt = k1*E1 -k2*E2 -r*E2 + ur*E2d
+    dIdt = k2*E2 - q*I -  I/D - r*I+ ur*Id
+    dQdt = q*I - Q/D -r*Q + ur*Qd
+    dRdt = I/D + Q/D -r*R+ur*Rd
+    
+    dSddt = -(f*R0/(D+1/k2))*(I+E2 + f*(Id+E2d))*Sd/N + r*S -ur*Sd
+    dE1ddt = (f*R0/(D+1/k2))*(I+E2 + f*(Id+E2d))*Sd/N - k1*E1d +r*E1 - ur*E1d
+    dE2ddt = k1*E1d - k2*E2d + r*E2 - ur*E2d
+    dIddt = k2*E2d - q*Id-  Id/D + r*I - ur*Id
+    dQddt = q*Id - Qd/D +r*Q - ur*Qd
+   dRddt = Id/D+Qd/D +r*R - ur*Rd
+    # dRdt = I/D; dr + ds + di =0, S+I+R = N --> R = N-S-I and we eliminate R 
+     list(c(dSdt,dE1dt, dE2dt, dIdt, dQdt,dRdt, dSddt,dE1ddt, dE2ddt, dIddt, dQddt,dRddt ))
+  })
+}
+```
+
+```{r func-defn, echo=FALSE, message=FALSE}
+
+# ## Uncertainty
+# 
+# One of the key parameters in an epidemic model is the basic reproduction number, R0. This is the average number of new infections per infected individual in a completely susceptible population (here, we think of R0 as the basic reproduction number in the absence of interventions like social distancing so that we have a baseline). We think that R0 for COVID19 is between 2 and 3. 
+# In these simulations we capture some of the considerable uncertainty by resampling R0 (normal, mean 2.5, sd 0.25)-- though this can be flexible. The 'multisolve' function simulates the model 50 times, each with a different R0 value. 
+# 
+# Here are functions to run 50 copies of the model, extract key outputs and make plots. For example we can create 3 plots with a ribbon, each taken from a collection of simulations around our parameters. The most uncertain parameter is R0, the basic reproduction number. Changes in other parameters typically change this one, so we have parameterized the model with R0 explicitly and we use sampling different R0s to explore some of the uncertainty in the model. 
+
+
+# simulate the model 50 times; return a concatenated data frame 
+multisolve=function(params,timing,state,times,nReps) {
+ # get random samples of R0
+  
+  rs=rnorm(nReps, mean = params$R0, sd=0.2)
+  biglist=lapply(rs, function(x) { 
+    thispars=params; thispars$R0=x; 
+    return( as.data.frame(ode(y= state, times=times,  func=socdistmodel, parms=thispars,sdtiming=timing)))})
+  names(biglist)=rs;
+  return(bind_rows(biglist, .id="R0"))
+}
+
+# collect the number of SYMPTOMATIC cases by day with lower 25, median and upper 75 quantile- this shows how numbers vary with R0
+getCasesbyDay2 = function(df, times, nReps,startDate=dmy("12-03-2020")) {
+ CaseInfo=t(vapply(times, function(x) {
+   wherenow = which(df$time==x)
+   normals=df$I[wherenow]
+   selfisols=df$Id[wherenow]
+   return(quantile(normals+selfisols,probs = c(0.1,0.5,0.9)))
+   }, FUN.VALUE = c(2,3,4)))
+ return(data.frame(times=times,dates=startDate+times, lower25=CaseInfo[,1], median=CaseInfo[,2], upper75=CaseInfo[,3]))
+}
+
+# collect the total infectious cases, symptomatic and pre-symptomatic
+getAllCasesbyDay2= function(df, times, nReps,startDate=dmy("12-03-2020")) {
+ CaseInfo=t(vapply(times, function(x) {
+   wherenow = which(df$time==x)
+   normals=(df$I+df$E1+df$E2)[wherenow]
+   selfisols=(df$Id+df$E1d+df$E2d)[wherenow]
+   return(quantile(normals+selfisols,probs = c(0.1,0.5,0.9)))
+   }, FUN.VALUE = c(2,3,4)))
+ return(data.frame(times=times,dates=startDate+times, lower25=CaseInfo[,1], median=CaseInfo[,2], upper75=CaseInfo[,3]))
+}
+
+# get the numbers who have ever been infected, along the simulation 
+getEverInfbyDay= function(df, times, nReps,startDate=dmy("12-03-2020")) {
+ myN=rowSums(df[1,3:14])
+  CaseInfo=t(vapply(times, function(x) {
+   wherenow = which(df$time==x)
+   normals=df$S[wherenow]
+   selfisols=df$Sd[wherenow]
+   return(quantile(myN-(normals+selfisols),probs = c(0.1,0.5,0.9)))
+   }, FUN.VALUE = c(2,3,4)))
+ return(data.frame(times=times,dates=startDate+times, lower25=CaseInfo[,1], median=CaseInfo[,2], upper75=CaseInfo[,3]))
+}
+
+# pull out information about the timing of the peak, the size of the peak (max # of symptomatic cases at any one time), R0
+getSummaryInfo2 = function(df, times, nReps) {
+  peaktimes=vapply(1:nReps, function(x) {
+    k=length(times) # because of the stupid reshape
+    ii=((x-1)*k + 1):(k*x)
+    thisd=df[ii,]
+    return(thisd$time[which.max(thisd$I+thisd$Id)])}, FUN.VALUE = 1)
+  peaksizes=vapply(1:nReps, function(x) {
+    k=length(times)
+    ii=((x-1)*k + 1):(k*x)
+     thisd=df[ii,]
+    return(max(thisd$I+thisd$Id))}, FUN.VALUE = 1)
+   R0s=vapply(1:nReps, function(x) {
+     k=length(times)
+    ii1=((x-1)*k + 1)
+    return(as.numeric(df$R0[ii1]))    }, FUN.VALUE = 1)
+  return(data.frame(peaktimes=peaktimes, peaksizes=peaksizes,R0s=R0s))
+}
+
+# take in 3 solutions in list form, and make  ggplots
+makePlots = function(tt2,type="symp", shortterm=30,PopScale=TRUE, popSize=N) {
+  if (type == "symp") {
+cbd1 = getCasesbyDay2(tt2[[1]], times,nReps)
+cbd2 = getCasesbyDay2(tt2[[2]], times,nReps)
+cbd3 = getCasesbyDay2(tt2[[3]], times,nReps) }
+    if (type=="all") {
+cbd1 = getAllCasesbyDay2(tt2[[1]], times,nReps)
+cbd2 = getAllCasesbyDay2(tt2[[2]], times,nReps)
+cbd3 = getAllCasesbyDay2(tt2[[3]], times,nReps)
+    }
+  if (type=="ever") {
+cbd1 = getEverInfbyDay(tt2[[1]], times,nReps)
+cbd2 = getEverInfbyDay(tt2[[2]], times,nReps)
+cbd3 = getEverInfbyDay(tt2[[3]], times,nReps)
+  }
+  if (PopScale ==TRUE) {
+   cbd1[,3:5]=cbd1[,3:5]/popSize
+  cbd2[,3:5]=cbd2[,3:5]/popSize
+   cbd3[,3:5]=cbd3[,3:5]/popSize
+  }
+p1=ggplot(data=cbd1) + geom_line(aes(x=dates,y=median))+
+  geom_ribbon(aes(x=dates,ymin = lower25, ymax = upper75), alpha = 0.5,fill="grey") + geom_line(data=cbd2,aes(x=dates,y=median))+
+  geom_ribbon(data=cbd2, aes(x=dates,ymin = lower25, ymax = upper75), alpha = 0.3,fill="blue")+
+  geom_line(data=cbd3,aes(x=dates,y=median))+
+  geom_ribbon(data=cbd3,aes(x=dates,ymin = lower25, ymax = upper75), alpha = 0.3,fill="green")
+p2=ggplot(data=filter(cbd1,times<shortterm)) + geom_line(aes(x=dates,y=median))+
+  geom_ribbon(aes(x=dates,ymin = lower25, ymax = upper75), alpha = 0.5,fill="grey") + geom_line(data=filter(cbd2,times<shortterm),aes(x=dates,y=median))+
+  geom_ribbon(data=filter(cbd2,times<shortterm), aes(x=dates,ymin = lower25, ymax = upper75), alpha = 0.3,fill="blue")+
+  geom_line(data=filter(cbd3,times<shortterm),aes(x=dates,y=median))+
+  geom_ribbon(data=filter(cbd3,times<shortterm),aes(x=dates,ymin = lower25, ymax = upper75), alpha = 0.3,fill="green")
+return(list(p1,p2))
+}
+```
+
+
+```{r par-setup, echo=FALSE, message=FALSE}
+# default value set up
+times=0:400
+i0=50
+nReps=50
+
+N=2.4e6
+pars=list(N=N,D=5,R0=2.5,k1=1/4, k2=1,q=0, r=1, ur=0.8, f=0.6)
+fsi=with(pars, r/(r+ur))
+nsi=1-fsi
+state=c(S= nsi*(N-i0), E1=0.4*nsi*i0, E2=0.1*nsi*i0, I=0.5*nsi*i0, Q=0, R=0, 
+        Sd= fsi*(N-i0), E1d=0.4*fsi*i0, E2d=0.1*fsi*i0, Id=0.5*fsi*i0, Qd=0, Rd=0)
+```
+
+
+```{r solve3, echo=FALSE, message=FALSE}
+# set up and solve first 3 scenarios
+
+# set up 3 sets of parameters to explore no, medium and strong social distancing
+bpars=list(); timelist=list()
+bpars[[1]]=pars; bpars[[1]]$f=1
+timelist[[1]]=function(t) {ifelse( (t > 5 & t< 1000),1, 0) }
+bpars[[2]]=pars; bpars[[2]]$f=0.8
+timelist[[2]]=function(t) {ifelse( (t > 5 & t< 1000),1, 0) }
+bpars[[3]]=pars; bpars[[3]]$f=0.6
+timelist[[3]]=function(t) {ifelse( (t > 5 & t< 1000),1, 0) }
+# set up timing information: when do we stop and start social distancing? 
+
+tt2=lapply(1:3,function(x) multisolve(params=bpars[[x]],timing = timelist[[x]], state,times, nReps = nReps))
+names(tt2)=c(bpars[[1]]$f, bpars[[2]]$f,bpars[[3]]$f)
+```
+
+```{r, echo=FALSE, message=FALSE}
+cbd1 = getCasesbyDay2(tt2[[1]], times,nReps)
+cbd2 = getCasesbyDay2(tt2[[2]], times,nReps)
+cbd3 = getCasesbyDay2(tt2[[3]], times,nReps)
+```
+
+
+*To download data export for all scenario documented here, go to the [Data Summary and Download] section.*
+
+
+# Scenario 1: No Social Distancing
+
+## Assumptions
+
+* With no social distancing, factor of contact is $f=1.0$
+* Start date of infection is 12-03-2020
+* Social distancing measures are lifted only when infection stops or reaches population saturation
+* COVID-19 Basic Reproduction Number (R0) follows a normal distribution with mean 2.5 and sd 0.25
+* Population of 2.4 Million People
+
+## Results
+
+<center>
+```{r, echo=FALSE, message=FALSE}
+N=bpars[[1]]$N
+mydf=filter(getAllCasesbyDay2(tt2[[1]],times,nReps), times<210)
+ggplot(data=mydf) + geom_line(aes(x=dates,y=median/N))+
+  geom_ribbon(aes(x=dates,ymin = lower25/N, ymax = upper75/N), alpha = 0.5,fill="grey") +
+  theme_bw()+ylab("Fraction infectious")+ylim(c(0,0.3))
+```
+
+**Figure 1a**: Infections over time for no social distancing
+</center>
+<br></br>
+
+<center>
+```{r, echo=FALSE, message=FALSE}
+N=bpars[[1]]$N
+mydf=filter(getEverInfbyDay(tt2[[1]],times,nReps), times<210)
+ggplot(data=mydf) + geom_line(aes(x=dates,y=median/N))+
+  geom_ribbon(aes(x=dates,ymin = lower25/N, ymax = upper75/N), alpha = 0.5,fill="grey") +
+  theme_bw()+ylab("Cumulative infected")+ylim(c(0,1))
+```
+
+**Figure 1b**: Cumulative infections over time for no social distancing
+</center>
+<br></br>
+
+
+```{r, echo=FALSE, message=FALSE}
+# export data, cumulative infections
+mydf_1=filter(getEverInfbyDay(tt2[[1]],times,nReps), times<1000)
+mydf_1$N=bpars[[1]]$N
+mydf_1$scen='scen1_noSocDist'
+write.csv(mydf_1, 'data_output/covid19_scen1_noSocDist.csv', row.names=FALSE)
+```
+
+**Download data export of cumulative infection by date [here](data_output/covid19_scen1_noSocDist.csv)**
+
+
+# Scenario 2: Medium-scale Social Distancing
+
+## Assumptions
+
+* With medium social distancing, factor of contact is $f\approx0.80$$
+  * Contacts break down: 25% household, 40% school/work, and 35% community
+  * Reduced contact due to preventative measure: school by 10%, work by 35%, community by 25%, household no change
+* Start date of infection is 12-03-2020
+* Social distancing measures are lifted only when infection stops or reaches population saturation
+* COVID-19 Basic Reproduction Number (R0) follows a normal distribution with mean 2.5 and sd 0.25
+* Population of 2.4 Million People
+
+
+*Example calculation of contact factor $f$ for meidum-scale social distancing*
+
+```{r}
+hh=0.25; school=0.25*0.4; work=0.75*0.4; community=0.35; # portion contacts 
+f = hh*1 + school*0.9 + work*0.65 + community*0.75
+f
+```
+
+
+## Results
+
+<center>
+
+```{r, echo=FALSE, message=FALSE}
+N=bpars[[2]]$N
+mydf=filter(getAllCasesbyDay2(tt2[[2]],times,nReps), times<210)
+ggplot(data=mydf) + geom_line(aes(x=dates,y=median/N))+
+  geom_ribbon(aes(x=dates,ymin = lower25/N, ymax = upper75/N), alpha = 0.5,fill="blue") +
+  theme_bw()+ylab("Fraction infectious")+ylim(c(0,0.3))
+```
+
+**Figure 2a**: Infections over time for medium social distancing
+</center>
+<br></br>
+
+
+<center>
+
+```{r, echo=FALSE, message=FALSE}
+N=bpars[[1]]$N
+mydf=filter(getEverInfbyDay(tt2[[2]],times,nReps), times<210)
+ggplot(data=mydf) + geom_line(aes(x=dates,y=median/N))+
+  geom_ribbon(aes(x=dates,ymin = lower25/N, ymax = upper75/N), alpha = 0.5,fill="blue") +
+  theme_bw()+ylab("Cumulative infected")+ylim(c(0,1))
+```
+
+**Figure 2b**: Cumulative infections over time for medium social distancing
+</center>
+<br></br>
+
+
+```{r, echo=FALSE, message=FALSE}
+# export data, cumulative infections
+mydf_2=filter(getEverInfbyDay(tt2[[2]],times,nReps), times<1000)
+mydf_2$N=bpars[[2]]$N
+mydf_2$scen='scen2_mdSocDist'
+write.csv(mydf_2, 'data_output/covid19_scen2_mdSocDist.csv', row.names=FALSE)
+```
+
+**Download data export of cumulative infection by date [here](data_output/covid19_scen2_mdSocDist.csv)**
+
+
+# Scenario 3: Strong Broad Social Distancing
+
+## Assumptions
+
+* With high-level of strong broad social distancing, factor of contact is $f\approx0.60$
+  * Contacts break down: 25% household, 40% school/work, and 35% community
+  * Reduced contact due to preventative measure: school by 90%, work by 65%, community by 65%, household no change
+* Start date of infection is 12-03-2020
+* Social distancing measures are lifted only when infection stops or reaches population saturation
+* COVID-19 Basic Reproduction Number (R0) follows a normal distribution with mean 2.5 and sd 0.25
+* Population of 2.4 Million People
+
+
+Example calculation of contact factor $f$ for high-level social distancing
+
+```{r}
+hh=0.25; school=0.25*0.4; work=0.75*0.4; community=0.35; # portion contacts 
+f = hh*1.45 + school*0.1 + work*0.35 + community*0.35
+f
+```
+
+
+## Results
+
+<center>
+
+```{r, echo=FALSE, message=FALSE}
+N=bpars[[3]]$N # actually resetting N isn't necessary, but it's good practice
+mydf=filter(getAllCasesbyDay2(tt2[[3]],times,nReps), times<260)
+ggplot(data=mydf) + geom_line(aes(x=dates,y=median/N))+
+  geom_ribbon(aes(x=dates,ymin = lower25/N, ymax = upper75/N), alpha = 0.5,fill="green") +
+  theme_bw()+ylab("Fraction infectious")+ylim(c(0,0.3))
+```
+
+**Figure 3a**: Infections over time for high-level social distancing
+</center>
+<br></br>
+
+
+<center>
+
+```{r, echo=FALSE, message=FALSE}
+N=bpars[[3]]$N
+mydf=filter(getEverInfbyDay(tt2[[3]],times,nReps), times<260)
+ggplot(data=mydf) + geom_line(aes(x=dates,y=median/N))+
+  geom_ribbon(aes(x=dates,ymin = lower25/N, ymax = upper75/N), alpha = 0.5,fill="green") +
+  theme_bw()+ylab("Cumulative infected")+ylim(c(0,1))
+```
+
+**Figure 3b**: Cumulative infections over time for high-level social distancing
+</center>
+<br></br>
+
+
+```{r, echo=FALSE, message=FALSE}
+# export data, cumulative infections
+mydf_3=filter(getEverInfbyDay(tt2[[3]],times,nReps), times<1000)
+mydf_3$N=bpars[[3]]$N
+mydf_3$scen='scen3_hiSocDist'
+write.csv(mydf_3, 'data_output/covid19_scen3_hiSocDist.csv', row.names=FALSE)
+```
+
+**Download data export of cumulative infection by date [here](data_output/covid19_scen3_hiSocDist.csv)**
+
+
+
+## Comparisons and the early phase 
+
+Here we show three social distancing scenarios on the same plot for comparison, and we show the early rise. In most of the above plots, it looks like there are no cases in the first few months, but this is misleading. It's not that there are no cases, it's just that the numbers grow so high later that we can't see the rises in the early phase unless we zoom in on that time period. 
+
+
+```{r, echo=FALSE, message=FALSE}
+ll=makePlots(tt2,type="all",PopScale = TRUE,popSize =pars$N)
+grid.arrange(ll[[1]], ll[[2]])
+```
+
+
+# Scenario 4.1: Strong Broad Social distancing limited to 200 days
+
+## Assumptions
+
+* With high-level of strong broad social distancing, factor of contact is $f\approx0.60$
+  * Contacts break down: 25% household, 40% school/work, and 35% community
+  * Reduced contact due to preventative measure: school by 90%, work by 65%, community by 65%, household no change
+* Start date of infection is 12-03-2020
+* Social distancing measures are lifted after **200 days**
+* COVID-19 Basic Reproduction Number (R0) follows a normal distribution with mean 2.5 and sd 0.25
+* Population of 2.4 Million People
+
+
+## Results
+
+<center>
+
+```{r, echo=FALSE, message=FALSE}
+newtime=function(t) {ifelse( (t > 5 & t< 200),1, 0) }
+scn41sol= multisolve(params=bpars[[3]],timing = newtime, state,times, nReps = nReps)
+mydf=getAllCasesbyDay2(scn41sol,times,nReps)
+ggplot(data=mydf) + geom_line(aes(x=dates,y=median/N))+
+  geom_ribbon(aes(x=dates,ymin = lower25/N, ymax = upper75/N), alpha = 0.5,fill="purple") +
+  theme_bw()+ylab("Fraction infectious")+ylim(c(0,0.3))
+```
+
+**Figure 4.1a**: Infections over time for 200 days of high-level social distancing
+</center>
+<br></br>
+
+
+<center>
+
+```{r, echo=FALSE, message=FALSE}
+mydf=getEverInfbyDay(scn41sol,times,nReps)
+ggplot(data=mydf) + geom_line(aes(x=dates,y=median/N))+
+  geom_ribbon(aes(x=dates,ymin = lower25/N, ymax = upper75/N), alpha = 0.5,fill="purple") +
+  theme_bw()+ylab("Fraction infectious")+ylim(c(0,1))
+```
+
+**Figure 4.1b**: Cumulative infections over time for 200 days of high-level social distancing
+</center>
+<br></br>
+
+
+```{r, echo=FALSE, message=FALSE}
+# export data, cumulative infections
+mydf_41=getEverInfbyDay(scn41sol,times,nReps)
+mydf_41$N=N
+mydf_41$scen='scen41_200daysHiSocDist'
+write.csv(mydf_41, 'data_output/covid19_scen41_200daysHiSocDist.csv', row.names=FALSE)
+```
+
+**Download data export of cumulative infection by date [here](data_output/covid19_scen41_200daysHiSocDist.csv)**
+
+
+# Scenario 4.2: Strong Broad Social distancing limited to 100 days
+
+## Assumptions
+
+* With high-level of strong broad social distancing, factor of contact is $f\approx0.60$
+  * Contacts break down: 25% household, 40% school/work, and 35% community
+  * Reduced contact due to preventative measure: school by 90%, work by 65%, community by 65%, household no change
+* COVID-19 Basic Reproduction Number (R0) follows a normal distribution with mean 2.5 and sd 0.25
+* Start date of infection is 12-03-2020
+* Population of 2.4 Million People
+* Social distancing measures are lifted after **100 days**
+
+
+## Results
+
+<center>
+
+```{r, echo=FALSE, message=FALSE}
+newtime=function(t) {ifelse( (t > 5 & t< 100),1, 0) }
+scn42sol= multisolve(params=bpars[[3]],timing = newtime, state,times, nReps = nReps)
+mydf=getAllCasesbyDay2(scn42sol,times,nReps)
+ggplot(data=mydf) + geom_line(aes(x=dates,y=median/N))+
+  geom_ribbon(aes(x=dates,ymin = lower25/N, ymax = upper75/N), alpha = 0.5,fill="darkgreen") +
+  theme_bw()+ylab("Fraction infectious")+ylim(c(0,0.3))
+```
+
+**Figure 4.2a**: Infections over time for 100 days of high-level social distancing
+</center>
+<br></br>
+
+<center>
+
+```{r, echo=FALSE, message=FALSE}
+mydf=getEverInfbyDay(scn42sol,times,nReps)
+ggplot(data=mydf) + geom_line(aes(x=dates,y=median/N))+
+  geom_ribbon(aes(x=dates,ymin = lower25/N, ymax = upper75/N), alpha = 0.5,fill="darkgreen") +
+  theme_bw()+ylab("Fraction infectious")+ylim(c(0,1))
+```
+
+**Figure 4.2b**: Cumulative infections over time for 100 days of high-level social distancing
+</center>
+<br></br>
+
+```{r, echo=FALSE, message=FALSE}
+# export data, cumulative infections
+mydf_42=getEverInfbyDay(scn42sol,times,nReps)
+mydf_42$N=N
+mydf_42$scen='scen42_100daysHiSocDist'
+write.csv(mydf_42, 'data_output/covid19_scen42_100daysHiSocDist.csv', row.names=FALSE)
+```
+
+**Download data export of cumulative infection by date [here](data_output/covid19_scen42_100daysHiSocDist.csv)**
+
+
+# Scenario 5c1: Slow 45-day social distancing
+
+## Assumptions
+
+* Do nothing for the first 15 days
+* Then implements very strong social distancing slowly, factor of contact decreases from 1 to 0.4 over 1 week
+* Start date of infection is 12-03-2020
+* Social distancing measures lifted at day 60 (**45 days** of social distancing)
+* COVID-19 Basic Reproduction Number (R0) follows a normal distribution with mean 2.5 and sd 0.25
+* Population of 2.4 Million People
+
+
+## Results
+
+
+```{r socdist-linear, echo=FALSE, message=FALSE}
+socdist2 <- function(t,state,pars,sdprofile) {
+  with(as.list(c(state,pars)), { 
+#    f = ifelse(sdtiming(t)==1, pars$f, 1) # if social distancing is on, use pars$f. Otherwise, f is 1.
+    f=sdprofile(t)
+    dSdt = -(R0/(D+1/k2))*(I+E2 + f*(Id+E2d))*S/N - r*S + ur*Sd
+    dE1dt = (R0/(D+1/k2))*(I+E2 + f*(Id+E2d))*S/N - k1*E1 -r*E1 + ur*E1d
+    dE2dt = k1*E1 -k2*E2 -r*E2 + ur*E2d
+    dIdt = k2*E2 - q*I -  I/D - r*I+ ur*Id
+    dQdt = q*I - Q/D -r*Q + ur*Qd
+    dRdt = I/D + Q/D -r*R+ur*Rd
+    
+    dSddt = -(f*R0/(D+1/k2))*(I+E2 + f*(Id+E2d))*Sd/N + r*S -ur*Sd
+    dE1ddt = (f*R0/(D+1/k2))*(I+E2 + f*(Id+E2d))*Sd/N - k1*E1d +r*E1 - ur*E1d
+    dE2ddt = k1*E1d - k2*E2d + r*E2 - ur*E2d
+    dIddt = k2*E2d - q*Id-  Id/D + r*I - ur*Id
+    dQddt = q*Id - Qd/D +r*Q - ur*Qd
+   dRddt = Id/D+Qd/D +r*R - ur*Rd
+    # dRdt = I/D; dr + ds + di =0, S+I+R = N --> R = N-S-I and we eliminate R 
+     list(c(dSdt,dE1dt, dE2dt, dIdt, dQdt,dRdt, dSddt,dE1ddt, dE2ddt, dIddt, dQddt,dRddt ))
+  })
+}
+```
+
+```{r, echo=FALSE, message=FALSE}
+multisolve2=function(params,timing,state,times,nReps) {
+ # get random samples of R0
+  
+  rs=rnorm(nReps, mean = params$R0, sd=0.2)
+  biglist=lapply(rs, function(x) { 
+    thispars=params; thispars$R0=x; 
+    return( as.data.frame(ode(y= state, times=times,  func=socdist2, parms=thispars,sdprofile=timing)))})
+  names(biglist)=rs;
+  return(bind_rows(biglist, .id="R0"))
+}
+```
+
+```{r, echo=FALSE, message=FALSE}
+# now I just want f(t) as my timing function 
+
+strongpars = list(N=N,D=5,R0=2.5,k1=1/4, k2=1,q=0.08, r=1, ur=0.5, f=0.4)
+
+# profile of factor f - see sdprofile=timing and func. socdist2()
+newtime=function(t) {
+  if (t < 15) return(1)
+  if (t >=15 & t < 22) return( 1 - (1/7)*(1-0.4)*(t-15) )
+  if (t>=22 & t < 60) return(0.4)
+  if (t>=60) return(1)
+  }
+
+fsi=with(strongpars, r/(r+ur))
+nsi=1-fsi
+state=c(S= nsi*(N-i0), E1=0.4*nsi*i0, E2=0.1*nsi*i0, I=0.5*nsi*i0, Q=0, R=0, 
+        Sd= fsi*(N-i0), E1d=0.4*fsi*i0, E2d=0.1*fsi*i0, Id=0.5*fsi*i0, Qd=0, Rd=0)
+
+
+# times=0:80
+times=0:400
+i0=50
+nReps=50
+
+tmp = as.data.frame(ode(y= state, times=times,  func=socdist2, parms=strongpars,sdprofile=newtime))
+imports = rpois(length(times), lambda = 1.5)
+
+scen5c1sol= multisolve2(params=strongpars,timing = newtime, state,times, nReps = nReps)
+```
+
+
+<center>
+
+```{r, echo=FALSE, message=FALSE}
+mydf=getAllCasesbyDay2(scen5c1sol,times,nReps)
+ggplot(data=filter(mydf, times<80)) + geom_line(aes(x=dates,y=(median+imports[1:80])/N))+
+  geom_ribbon(aes(x=dates,ymin = (lower25+qpois(0.25,2))/N, ymax = (upper75+qpois(0.75,2))/N), alpha = 0.5,fill="chocolate2") +
+  geom_rect(aes(xmin=lubridate::ymd("2020-03-12")+15,
+                xmax=lubridate::ymd("2020-03-12")+60),
+                  ymin=0, ymax=0.5,
+            fill='blue', alpha=.005)  +
+  theme_bw()+ylab("Fraction infectious") 
+```
+
+**Figure 5c1a**: Infections over time in the first 80 days for slow 45-day social distancing
+</center>
+<br></br>
+
+
+<center>
+
+```{r, echo=FALSE, message=FALSE}
+mydf=getAllCasesbyDay2(scen5c1sol,times,nReps)
+ggplot(data=filter(mydf, times<400)) + geom_line(aes(x=dates,y=(median+imports[1:80])/N))+
+  geom_ribbon(aes(x=dates,ymin = (lower25+qpois(0.25,2))/N, ymax = (upper75+qpois(0.75,2))/N), alpha = 0.5,fill="chocolate2") +
+  geom_rect(aes(xmin=lubridate::ymd("2020-03-12")+15,
+                xmax=lubridate::ymd("2020-03-12")+60),
+                  ymin=0, ymax=0.5,
+            fill='blue', alpha=.005)  +
+  theme_bw()+ylab("Fraction infectious") 
+```
+
+**Figure 5c1b**: Infections over time for slow 45-day social distancing in the longer term
+
+</center>
+<br></br>
+
+
+<center>
+
+```{r, echo=FALSE, message=FALSE}
+mydf=getEverInfbyDay(scen5c1sol,times,nReps)
+ggplot(data=filter(mydf, times<400)) + geom_line(aes(x=dates,y=(median+imports[1:80])/N))+
+  geom_ribbon(aes(x=dates,ymin = (lower25+qpois(0.25,2))/N, ymax = (upper75+qpois(0.75,2))/N), alpha = 0.5,fill="chocolate2") +
+geom_rect(aes(xmin=lubridate::ymd("2020-03-14")+15,
+                xmax=lubridate::ymd("2020-03-15")+60),
+                  ymin=0, ymax=1,
+            fill='blue', alpha=.005)  +
+  theme_bw()+ylab("Fraction infectious") 
+```
+
+**Figure 5c1c**: Cumulative infections over time for slow 45-day social distancing in the longer term
+
+</center>
+<br></br>
+
+
+```{r, echo=FALSE, message=FALSE}
+# export data, cumulative infections
+mydf_5c1=getEverInfbyDay(scn42sol,times,nReps)
+mydf_5c1$N=N
+mydf_5c1$scen='scen5c1_45daysSlSocDist'
+write.csv(mydf_5c1, 'data_output/covid19_scen5c1_45daysSlSocDist.csv', row.names=FALSE)
+```
+
+**Download data export of cumulative infection by date [here](data_output/covid19_scen5c1_45daysSlSocDist.csv)**
+
+
+# Scenario 5c2: Slow then very strong social distancing 
+
+## Assumptions
+
+* Do nothing for the first 15 days
+* Then implements very strong social distancing slowly, factor of contact decreases from 1 to 0.4 over 1 week
+* Start date of infection is 12-03-2020
+* Social distancing measures are lifted only when infection stops or reaches population saturation
+* COVID-19 Basic Reproduction Number (R0) follows a normal distribution with mean 2.5 and sd 0.25
+* Population of 2.4 Million People
+
+Note: this scenario results in a peak of around 1,100 infections.
+
+
+```{r, echo=FALSE, message=FALSE}
+# now I just want f(t) as my timing function 
+
+strongpars = list(N=N,D=5,R0=2.5,k1=1/4, k2=1,q=0.08, r=1, ur=0.5, f=0.4)
+
+newtime=function(t) {
+  if (t < 15) return(1)
+  if (t >=15 & t < 22) return( 1 - (1/7)*(1-0.4)*(t-15) )
+  if (t>=22 & t < 60) return(0.4)
+  if (t>=60) return(0.4)
+  # additional scenarios
+  # if (t>=22 & t < 200) return(0)
+  # if (t>=200) return(1)
+  # note that this model seems to be able to reproduce infection from very small fractional number
+  # this is reasonable for an open system where infection is global within a very large population
+  }
+
+fsi=with(strongpars, r/(r+ur))
+nsi=1-fsi
+state=c(S= nsi*(N-i0), E1=0.4*nsi*i0, E2=0.1*nsi*i0, I=0.5*nsi*i0, Q=0, R=0, 
+        Sd= fsi*(N-i0), E1d=0.4*fsi*i0, E2d=0.1*fsi*i0, Id=0.5*fsi*i0, Qd=0, Rd=0)
+
+
+# times=0:80
+maxtime=400
+times=0:maxtime
+i0=50
+nReps=50
+
+tmp = as.data.frame(ode(y= state, times=times,  func=socdist2, parms=strongpars,sdprofile=newtime))
+imports = rpois(length(times), lambda = 1.5)
+
+scen5c2sol= multisolve2(params=strongpars,timing = newtime, state,times, nReps = nReps)
+```
+
+
+<center>
+
+```{r, echo=FALSE, message=FALSE}
+mydf=getAllCasesbyDay2(scen5c2sol,times,nReps)
+ggplot(data=filter(mydf, times<80)) + geom_line(aes(x=dates,y=(median+imports[1:80])/N))+
+  geom_ribbon(aes(x=dates,ymin = (lower25+qpois(0.25,2))/N, ymax = (upper75+qpois(0.75,2))/N), alpha = 0.5,fill="tomato") +
+  geom_rect(aes(xmin=lubridate::ymd("2020-03-12")+15,
+                xmax=lubridate::ymd("2020-03-12")+60),
+                  ymin=0, ymax=0.5,
+            fill='blue', alpha=.005)  +
+  theme_bw()+ylab("Fraction infectious") 
+```
+
+**Figure 5c2a**: Infections over time for slow then very strong social distancing in the first 80 days 
+</center>
+<br></br>
+
+
+<center>
+
+```{r, echo=FALSE, message=FALSE}
+mydf=getAllCasesbyDay2(scen5c2sol,times,nReps)
+ggplot(data=filter(mydf, times<maxtime)) + geom_line(aes(x=dates,y=(median+imports[1:80])/N))+
+  geom_ribbon(aes(x=dates,ymin = (lower25+qpois(0.25,2))/N, ymax = (upper75+qpois(0.75,2))/N), alpha = 0.5,fill="tomato") +
+  geom_rect(aes(xmin=lubridate::ymd("2020-03-12")+15,
+                xmax=lubridate::ymd("2020-03-12")+60),
+                  ymin=0, ymax=0.5,
+            fill='blue', alpha=.005)  +
+  theme_bw()+ylab("Fraction infectious") 
+```
+
+**Figure 5c2b**: Infections over time for slow then very strong social distancing in the longer term
+
+</center>
+<br></br>
+
+
+<center>
+
+```{r, echo=FALSE, message=FALSE}
+mydf=getEverInfbyDay(scen5c2sol,times,nReps)
+ggplot(data=filter(mydf, times<maxtime)) + geom_line(aes(x=dates,y=(median+imports[1:80])/N))+
+  geom_ribbon(aes(x=dates,ymin = (lower25+qpois(0.25,2))/N, ymax = (upper75+qpois(0.75,2))/N), alpha = 0.5,fill="tomato") +
+geom_rect(aes(xmin=lubridate::ymd("2020-03-14")+15,
+                xmax=lubridate::ymd("2020-03-15")+60),
+                  ymin=0, ymax=1,
+            fill='blue', alpha=.005)  +
+  theme_bw()+ylab("Fraction infectious") 
+```
+
+**Figure 5c2c**: Cumulative infections over time for slow then very strong social distancing in the longer term
+
+
+</center>
+<br></br>
+
+```{r, echo=FALSE, message=FALSE}
+# export data, cumulative infections
+mydf_5c2=getEverInfbyDay(scen5c2sol,times,nReps)
+mydf_5c2$N=N
+mydf_5c2$scen='scen5c2_slHiSocDist'
+write.csv(mydf_5c2, 'data_output/covid19_scen5c2_slHiSocDist.csv', row.names=FALSE)
+```
+
+**Download data export of cumulative infection by date [here](data_output/covid19_scen5c2_slHiSocDist.csv)**
+
+
+Note: Scenario 5 "Planking" the curve or "supression" options have been excluded as they produce uncertain or unrealistic results. Scenario 6 on smaller population is excluded. To see these scenarios, go to the [main model page](SimpleSocialDistanceModel.html).
+
+
+# Data Summary and Download
+
+## Summary of Assumptions and Results
+| Scenario | Assumption | When Infection Stops* |
+|---------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------|
+| Scenario 1: No Social Distancing | • Factor of contact is **f=1.0**  <br>• Start date of infection is 12-03-2020 <br>• Social distancing measures are lifted only when **infection stops or reaches population saturation** <br>• COVID-19 Basic Reproduction Number (R0) has mean 2.5 and sd 0.25 <br>• Population of 2.4 Million People | 2020-09 |
+| Scenario 2: Medium-scale Social Distancing | • Factor of contact is **f≈0.80** <br>• Contacts break down: 25% household, 40% school/work, and 35% broader community <br>• Reduced contact due to preventative measure: school by 10%, work by 35%, community by 25%, household no change <br>• Start date of infection is 12-03-2020 <br>• Social distancing measures are lifted only when **infection stops or reaches population saturation** <br>• COVID-19 Basic Reproduction Number (R0) follows a normal distribution with mean 2.5 and sd 0.25 <br>• Population of 2.4 Million People | 2020-12 |
+| Scenario 3: Strong Broad Social Distancing | • Factor of contact is **f≈0.6** <br>• Contacts break down: 25% household, 40% school/work, and 35% broader community <br>• Reduced contact due to preventative measure: school by 90%, work by 65%, community by 65%, household no change <br>• Start date of infection is 12-03-2020 <br>• Social distancing measures are lifted only when **infection stops or reaches population saturation** <br>• COVID-19 Basic Reproduction Number (R0) follows a normal distribution with mean 2.5 and sd 0.25 <br>• Population of 2.4 Million People | 2021-04 |
+| Scenario 4.1: Strong Broad Social distancing limited to 200 days | • Factor of contact is **f≈0.6** <br>• Contacts break down: 25% household, 40% school/work, and 35% broader community <br>• Reduced contact due to preventative measure: school by 90%, work by 65%, community by 65%, household no change <br>• Start date of infection is 12-03-2020 <br>• Social distancing measures are **lifted after 200 days** <br>• COVID-19 Basic Reproduction Number (R0) follows a normal distribution with mean 2.5 and sd 0.25 <br>• Population of 2.4 Million People | 2021-03 |
+| Scenario 4.2: Strong Broad Social distancing limited to 100 days | • Factor of contact is **f≈0.6** <br>• Contacts break down: 25% household, 40% school/work, and 35% broader community <br>• Reduced contact due to preventative measure: school by 90%, work by 65%, community by 65%, household no change <br>• Start date of infection is 12-03-2020 <br>• Social distancing measures are **lifted after 100 days** <br>• COVID-19 Basic Reproduction Number (R0) follows a normal distribution with mean 2.5 and sd 0.25 <br>• Population of 2.4 Million People | 2020-11 |
+| Scenario 5c1: Slow 45-day social distancing | • Do nothing for the first 15 days <br>• Then implements very strong social distancing slowly, factor of contact decreases from **f=1.0** to **f=0.4** over 1 week <br>• Start date of infection is 12-03-2020 <br>• Social distancing measures lifted at day 60 (**45 days** of social distancing) <br>• COVID-19 Basic Reproduction Number (R0) follows a normal distribution with mean 2.5 and sd 0.25 <br>• Population of 2.4 Million People | 2020-11 |
+| Scenario 5c2: Slow then very strong social distancing✝ | • Do nothing for the first 15 days <br>• Then implements very strong social distancing slowly, factor of contact decreases from **f=1.0** to **f=0.4** over 1 week <br>• Start date of infection is 12-03-2020 <br>• Social distancing measures are lifted only when **infection stops or reaches population saturation** <br>• COVID-19 Basic Reproduction Number (R0) follows a normal distribution with mean 2.5 and sd 0.25 <br>• Population of 2.4 Million People | 2020-06 |
+*Infection considered stopped when monthly infection falls below 10.
+✝Scenario 5c2 is a outbreak prevented scenario where infection never reaches population saturation.
+
+
+```{r, echo=FALSE, message=FALSE}
+# combine all data
+mydf_combined = rbind(mydf_1, mydf_2)
+mydf_combined = rbind(mydf_combined, mydf_3)
+mydf_combined = rbind(mydf_combined, mydf_41)
+mydf_combined = rbind(mydf_combined, mydf_42)
+mydf_combined = rbind(mydf_combined, mydf_5c1)
+mydf_combined = rbind(mydf_combined, mydf_5c2)
+
+# get summary data by month
+summarydf = mydf_combined %>%
+  mutate(month = format(dates, "%Y-%m")) %>%
+  group_by(scen, month) %>%
+  summarise(
+    date = last(dates),
+    q25_infection = last(lower25),
+    q75_infection = last(upper75),
+    med_infection = last(median)
+  ) %>%
+  ungroup() %>%
+  group_by(scen) %>% 
+  mutate(new_infection_monthly = lead(med_infection) - med_infection) %>% 
+  ungroup() %>% 
+  filter(!is.na(new_infection_monthly))
+
+write.csv(summarydf, 'data_output/covid19_all_scen_summary.csv', row.names=FALSE)
+```
+
+<center>
+```{r, fig.width=7,fig.height=7, echo=FALSE, message=FALSE}
+ggplot(
+  data = mydf_combined %>% filter(scen != 'scen5c2_slHiSocDist'),
+  aes(
+    x = dates,
+    y = median / N,
+    group = scen,
+    fill = scen,
+    color = scen,
+    size
+  )
+) + geom_line() +
+  geom_ribbon(aes(x = dates, ymin = lower25 / N, ymax = upper75 / N), alpha = 0.5) + # ,fill="blue"
+  geom_line() +
+  # facet_wrap() +
+  facet_grid(scen ~ ., scales = 'free_y') +
+  theme(strip.background = element_blank(),
+        strip.text.x = element_blank(),
+        strip.text.y = element_blank()) + ylab("Cumulative infected") + ylim(c(0, 1))
+```
+
+**Figure 6**: Cumulative infections over time for all scenarios (excl. scen5c2_slHiSocDist)
+
+</center>
+<br></br>
+
+
+**Download data export of cumulative and new infection by month for all scenarios [here](data_output/covid19_all_scen_summary.csv)**
+
