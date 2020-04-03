@@ -554,8 +554,8 @@ ggplot(data=filter(mydf, times<80)) + geom_line(aes(x=dates,y=(median+imports[1:
 mydf=getAllCasesbyDay2(newsol,times,nReps)
 ggplot(data=filter(mydf, times<80)) + geom_line(aes(x=dates,y=(median+imports[1:80])/N))+
   geom_ribbon(aes(x=dates,ymin = (lower25+qpois(0.25,2))/N, ymax = (upper75+qpois(0.75,2))/N), alpha = 0.5,fill="chocolate2") +
-geom_rect(aes(xmin=lubridate::ymd("2020-03-14")+15,
-                xmax=lubridate::ymd("2020-03-15")+60),
+geom_rect(aes(xmin=lubridate::ymd("2020-03-12")+15,
+                xmax=lubridate::ymd("2020-03-12")+60),
                   ymin=0, ymax=3e-4,
             fill='blue', alpha=.005)  +
   theme_bw()+ylab("Fraction infectious") 
@@ -615,8 +615,8 @@ ggplot(data=filter(mydf, times<80)) + geom_line(aes(x=dates,y=(median+imports[1:
 mydf=getAllCasesbyDay2(newsol,times,nReps)
 ggplot(data=filter(mydf, times<80)) + geom_line(aes(x=dates,y=(median+imports[1:80])/N))+
   geom_ribbon(aes(x=dates,ymin = (lower25+qpois(0.25,2))/N, ymax = (upper75+qpois(0.75,2))/N), alpha = 0.5,fill="chocolate2") +
-geom_rect(aes(xmin=lubridate::ymd("2020-03-14")+15,
-                xmax=lubridate::ymd("2020-03-15")+76),
+geom_rect(aes(xmin=lubridate::ymd("2020-03-12")+15,
+                xmax=lubridate::ymd("2020-03-12")+76),
                   ymin=0, ymax=3e-4,
             fill='blue', alpha=.005)  +
   theme_bw()+ylab("Fraction infectious") 
