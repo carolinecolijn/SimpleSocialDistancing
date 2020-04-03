@@ -7,7 +7,7 @@ author:
 date: "02/04/2020"
 output: 
   html_document:
-    keep_md: TRUE
+    keep_md: FALSE
     self_contained: TRUE
     toc: TRUE
     toc_depth: 2
@@ -19,6 +19,7 @@ library(ggplot2)
 library(dplyr)
 library(gridExtra)
 library(lubridate)
+library(writexl)
 ```
 
 ```{r simple-defn, echo=FALSE, message=FALSE}
@@ -216,17 +217,9 @@ cbd3 = getCasesbyDay2(tt2[[3]], times,nReps)
 *To download data export for all scenario documented here, go to the [Data Summary and Download] section.*
 
 
-# Scenario 1: No Social Distancing
+# Scenario Results
 
-## Assumptions
-
-* With no social distancing, factor of contact is $f=1.0$
-* Start date of infection is 12-03-2020
-* Social distancing measures are lifted only when infection stops or reaches population saturation
-* COVID-19 Basic Reproduction Number (R0) follows a normal distribution with mean 2.5 and sd 0.25
-* Population of 2.4 Million People
-
-## Results
+## Scenario 1: No Social Distancing
 
 <center>
 ```{r, echo=FALSE, message=FALSE}
@@ -255,28 +248,8 @@ ggplot(data=mydf) + geom_line(aes(x=dates,y=median/N))+
 <br></br>
 
 
-```{r, echo=FALSE, message=FALSE}
-# export data, cumulative infections
-mydf_1=filter(getEverInfbyDay(tt2[[1]],times,nReps), times<1000)
-mydf_1$N=bpars[[1]]$N
-mydf_1$scen='scen1_noSocDist'
-write.csv(mydf_1, 'data_output/covid19_scen1_noSocDist.csv', row.names=FALSE)
-```
 
-**Download data export of cumulative infection by date [here](data_output/covid19_scen1_noSocDist.csv)**
-
-
-# Scenario 2: Medium-scale Social Distancing
-
-## Assumptions
-
-* With medium social distancing, factor of contact is $f\approx0.80$$
-  * Contacts break down: 25% household, 40% school/work, and 35% community
-  * Reduced contact due to preventative measure: school by 10%, work by 35%, community by 25%, household no change
-* Start date of infection is 12-03-2020
-* Social distancing measures are lifted only when infection stops or reaches population saturation
-* COVID-19 Basic Reproduction Number (R0) follows a normal distribution with mean 2.5 and sd 0.25
-* Population of 2.4 Million People
+## Scenario 2: Medium-scale Social Distancing
 
 
 *Example calculation of contact factor $f$ for meidum-scale social distancing*
@@ -287,8 +260,6 @@ f = hh*1 + school*0.9 + work*0.65 + community*0.75
 f
 ```
 
-
-## Results
 
 <center>
 
@@ -320,28 +291,8 @@ ggplot(data=mydf) + geom_line(aes(x=dates,y=median/N))+
 <br></br>
 
 
-```{r, echo=FALSE, message=FALSE}
-# export data, cumulative infections
-mydf_2=filter(getEverInfbyDay(tt2[[2]],times,nReps), times<1000)
-mydf_2$N=bpars[[2]]$N
-mydf_2$scen='scen2_mdSocDist'
-write.csv(mydf_2, 'data_output/covid19_scen2_mdSocDist.csv', row.names=FALSE)
-```
 
-**Download data export of cumulative infection by date [here](data_output/covid19_scen2_mdSocDist.csv)**
-
-
-# Scenario 3: Strong Broad Social Distancing
-
-## Assumptions
-
-* With high-level of strong broad social distancing, factor of contact is $f\approx0.60$
-  * Contacts break down: 25% household, 40% school/work, and 35% community
-  * Reduced contact due to preventative measure: school by 90%, work by 65%, community by 65%, household no change
-* Start date of infection is 12-03-2020
-* Social distancing measures are lifted only when infection stops or reaches population saturation
-* COVID-19 Basic Reproduction Number (R0) follows a normal distribution with mean 2.5 and sd 0.25
-* Population of 2.4 Million People
+## Scenario 3: Strong Broad Social Distancing
 
 
 Example calculation of contact factor $f$ for high-level social distancing
@@ -353,7 +304,6 @@ f
 ```
 
 
-## Results
 
 <center>
 
@@ -385,17 +335,6 @@ ggplot(data=mydf) + geom_line(aes(x=dates,y=median/N))+
 <br></br>
 
 
-```{r, echo=FALSE, message=FALSE}
-# export data, cumulative infections
-mydf_3=filter(getEverInfbyDay(tt2[[3]],times,nReps), times<1000)
-mydf_3$N=bpars[[3]]$N
-mydf_3$scen='scen3_hiSocDist'
-write.csv(mydf_3, 'data_output/covid19_scen3_hiSocDist.csv', row.names=FALSE)
-```
-
-**Download data export of cumulative infection by date [here](data_output/covid19_scen3_hiSocDist.csv)**
-
-
 
 ## Comparisons and the early phase 
 
@@ -408,20 +347,8 @@ grid.arrange(ll[[1]], ll[[2]])
 ```
 
 
-# Scenario 4.1: Strong Broad Social distancing limited to 200 days
+## Scenario 4.1: Strong Broad Social distancing limited to 200 days
 
-## Assumptions
-
-* With high-level of strong broad social distancing, factor of contact is $f\approx0.60$
-  * Contacts break down: 25% household, 40% school/work, and 35% community
-  * Reduced contact due to preventative measure: school by 90%, work by 65%, community by 65%, household no change
-* Start date of infection is 12-03-2020
-* Social distancing measures are lifted after **200 days**
-* COVID-19 Basic Reproduction Number (R0) follows a normal distribution with mean 2.5 and sd 0.25
-* Population of 2.4 Million People
-
-
-## Results
 
 <center>
 
@@ -453,31 +380,9 @@ ggplot(data=mydf) + geom_line(aes(x=dates,y=median/N))+
 <br></br>
 
 
-```{r, echo=FALSE, message=FALSE}
-# export data, cumulative infections
-mydf_41=getEverInfbyDay(scn41sol,times,nReps)
-mydf_41$N=N
-mydf_41$scen='scen41_200daysHiSocDist'
-write.csv(mydf_41, 'data_output/covid19_scen41_200daysHiSocDist.csv', row.names=FALSE)
-```
 
-**Download data export of cumulative infection by date [here](data_output/covid19_scen41_200daysHiSocDist.csv)**
+## Scenario 4.2: Strong Broad Social distancing limited to 100 days
 
-
-# Scenario 4.2: Strong Broad Social distancing limited to 100 days
-
-## Assumptions
-
-* With high-level of strong broad social distancing, factor of contact is $f\approx0.60$
-  * Contacts break down: 25% household, 40% school/work, and 35% community
-  * Reduced contact due to preventative measure: school by 90%, work by 65%, community by 65%, household no change
-* COVID-19 Basic Reproduction Number (R0) follows a normal distribution with mean 2.5 and sd 0.25
-* Start date of infection is 12-03-2020
-* Population of 2.4 Million People
-* Social distancing measures are lifted after **100 days**
-
-
-## Results
 
 <center>
 
@@ -507,30 +412,10 @@ ggplot(data=mydf) + geom_line(aes(x=dates,y=median/N))+
 </center>
 <br></br>
 
-```{r, echo=FALSE, message=FALSE}
-# export data, cumulative infections
-mydf_42=getEverInfbyDay(scn42sol,times,nReps)
-mydf_42$N=N
-mydf_42$scen='scen42_100daysHiSocDist'
-write.csv(mydf_42, 'data_output/covid19_scen42_100daysHiSocDist.csv', row.names=FALSE)
-```
-
-**Download data export of cumulative infection by date [here](data_output/covid19_scen42_100daysHiSocDist.csv)**
 
 
-# Scenario 5c1: Slow 45-day social distancing
+## Scenario 5c1: Slow 45-day social distancing
 
-## Assumptions
-
-* Do nothing for the first 15 days
-* Then implements very strong social distancing slowly, factor of contact decreases from 1 to 0.4 over 1 week
-* Start date of infection is 12-03-2020
-* Social distancing measures lifted at day 60 (**45 days** of social distancing)
-* COVID-19 Basic Reproduction Number (R0) follows a normal distribution with mean 2.5 and sd 0.25
-* Population of 2.4 Million People
-
-
-## Results
 
 
 ```{r socdist-linear, echo=FALSE, message=FALSE}
@@ -657,27 +542,9 @@ geom_rect(aes(xmin=lubridate::ymd("2020-03-14")+15,
 <br></br>
 
 
-```{r, echo=FALSE, message=FALSE}
-# export data, cumulative infections
-mydf_5c1=getEverInfbyDay(scn42sol,times,nReps)
-mydf_5c1$N=N
-mydf_5c1$scen='scen5c1_45daysSlSocDist'
-write.csv(mydf_5c1, 'data_output/covid19_scen5c1_45daysSlSocDist.csv', row.names=FALSE)
-```
 
-**Download data export of cumulative infection by date [here](data_output/covid19_scen5c1_45daysSlSocDist.csv)**
+## Scenario 5c2: Slow then very strong social distancing 
 
-
-# Scenario 5c2: Slow then very strong social distancing 
-
-## Assumptions
-
-* Do nothing for the first 15 days
-* Then implements very strong social distancing slowly, factor of contact decreases from 1 to 0.4 over 1 week
-* Start date of infection is 12-03-2020
-* Social distancing measures are lifted only when infection stops or reaches population saturation
-* COVID-19 Basic Reproduction Number (R0) follows a normal distribution with mean 2.5 and sd 0.25
-* Population of 2.4 Million People
 
 Note: this scenario results in a peak of around 1,100 infections.
 
@@ -774,37 +641,69 @@ geom_rect(aes(xmin=lubridate::ymd("2020-03-14")+15,
 </center>
 <br></br>
 
-```{r, echo=FALSE, message=FALSE}
-# export data, cumulative infections
-mydf_5c2=getEverInfbyDay(scen5c2sol,times,nReps)
-mydf_5c2$N=N
-mydf_5c2$scen='scen5c2_slHiSocDist'
-write.csv(mydf_5c2, 'data_output/covid19_scen5c2_slHiSocDist.csv', row.names=FALSE)
-```
-
-**Download data export of cumulative infection by date [here](data_output/covid19_scen5c2_slHiSocDist.csv)**
-
 
 Note: Scenario 5 "Planking" the curve or "supression" options have been excluded as they produce uncertain or unrealistic results. Scenario 6 on smaller population is excluded. To see these scenarios, go to the [main model page](SimpleSocialDistanceModel.html).
 
 
 # Data Summary and Download
 
+
 ## Summary of Assumptions and Results
-| Scenario | Assumption | When Infection Stops* |
-|---------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------|
-| Scenario 1: No Social Distancing | • Factor of contact is **f=1.0**  <br>• Start date of infection is 12-03-2020 <br>• Social distancing measures are lifted only when **infection stops or reaches population saturation** <br>• COVID-19 Basic Reproduction Number (R0) has mean 2.5 and sd 0.25 <br>• Population of 2.4 Million People | 2020-09 |
-| Scenario 2: Medium-scale Social Distancing | • Factor of contact is **f≈0.80** <br>• Contacts break down: 25% household, 40% school/work, and 35% broader community <br>• Reduced contact due to preventative measure: school by 10%, work by 35%, community by 25%, household no change <br>• Start date of infection is 12-03-2020 <br>• Social distancing measures are lifted only when **infection stops or reaches population saturation** <br>• COVID-19 Basic Reproduction Number (R0) follows a normal distribution with mean 2.5 and sd 0.25 <br>• Population of 2.4 Million People | 2020-12 |
-| Scenario 3: Strong Broad Social Distancing | • Factor of contact is **f≈0.6** <br>• Contacts break down: 25% household, 40% school/work, and 35% broader community <br>• Reduced contact due to preventative measure: school by 90%, work by 65%, community by 65%, household no change <br>• Start date of infection is 12-03-2020 <br>• Social distancing measures are lifted only when **infection stops or reaches population saturation** <br>• COVID-19 Basic Reproduction Number (R0) follows a normal distribution with mean 2.5 and sd 0.25 <br>• Population of 2.4 Million People | 2021-04 |
-| Scenario 4.1: Strong Broad Social distancing limited to 200 days | • Factor of contact is **f≈0.6** <br>• Contacts break down: 25% household, 40% school/work, and 35% broader community <br>• Reduced contact due to preventative measure: school by 90%, work by 65%, community by 65%, household no change <br>• Start date of infection is 12-03-2020 <br>• Social distancing measures are **lifted after 200 days** <br>• COVID-19 Basic Reproduction Number (R0) follows a normal distribution with mean 2.5 and sd 0.25 <br>• Population of 2.4 Million People | 2021-03 |
-| Scenario 4.2: Strong Broad Social distancing limited to 100 days | • Factor of contact is **f≈0.6** <br>• Contacts break down: 25% household, 40% school/work, and 35% broader community <br>• Reduced contact due to preventative measure: school by 90%, work by 65%, community by 65%, household no change <br>• Start date of infection is 12-03-2020 <br>• Social distancing measures are **lifted after 100 days** <br>• COVID-19 Basic Reproduction Number (R0) follows a normal distribution with mean 2.5 and sd 0.25 <br>• Population of 2.4 Million People | 2020-11 |
-| Scenario 5c1: Slow 45-day social distancing | • Do nothing for the first 15 days <br>• Then implements very strong social distancing slowly, factor of contact decreases from **f=1.0** to **f=0.4** over 1 week <br>• Start date of infection is 12-03-2020 <br>• Social distancing measures lifted at day 60 (**45 days** of social distancing) <br>• COVID-19 Basic Reproduction Number (R0) follows a normal distribution with mean 2.5 and sd 0.25 <br>• Population of 2.4 Million People | 2020-11 |
-| Scenario 5c2: Slow then very strong social distancing✝ | • Do nothing for the first 15 days <br>• Then implements very strong social distancing slowly, factor of contact decreases from **f=1.0** to **f=0.4** over 1 week <br>• Start date of infection is 12-03-2020 <br>• Social distancing measures are lifted only when **infection stops or reaches population saturation** <br>• COVID-19 Basic Reproduction Number (R0) follows a normal distribution with mean 2.5 and sd 0.25 <br>• Population of 2.4 Million People | 2020-06 |
-*Infection considered stopped when monthly infection falls below 10.
+
+| Scenario | Assumption | When Infection Peaks | When Infection Stops* |
+|--------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------|---------------------|
+| Scenario 1: No Social Distancing | • Factor of contact is **f=1.0** <br>• Social distancing measures are lifted only when **infection stops or reaches population saturation** <br>• COVID-19 Basic Reproduction Number (R0) has mean 2.5 and sd 0.25 <br>• Start date of infection is 12-03-2020 <br>• Population of 2.4 Million People | 2020-05 | 2020-09 |
+| Scenario 2: Medium-scale Social Distancing | • Factor of contact is **f≈0.80** <br>• Contacts break down: 25% household, 40% school/work, and 35% broader community <br>• Reduced contact due to preventative measure: school by 10%, work by 35%, community by 25%, household no change <br>• Social distancing measures are lifted only when **infection stops or reaches population saturation** <br>• COVID-19 Basic Reproduction Number (R0) follows a normal distribution with mean 2.5 and sd 0.25 <br>• Start date of infection is 12-03-2020 <br>• Population of 2.4 Million People | 2020-07 | 2020-12 |
+| Scenario 3: Strong Broad Social Distancing | • Factor of contact is **f≈0.6** <br>• Contacts break down: 25% household, 40% school/work, and 35% broader community <br>• Reduced contact due to preventative measure: school by 90%, work by 65%, community by 65%, household no change <br>• Social distancing measures are lifted only when **infection stops or reaches population saturation** <br>• COVID-19 Basic Reproduction Number (R0) follows a normal distribution with mean 2.5 and sd 0.25 <br>• Start date of infection is 12-03-2020 <br>• Population of 2.4 Million People | 2020-08 | 2021-04 |
+| Scenario 4.1: Strong Broad Social distancing limited to 200 days | • Factor of contact is **f≈0.6** <br>• Contacts break down: 25% household, 40% school/work, and 35% broader community <br>• Reduced contact due to preventative measure: school by 90%, work by 65%, community by 65%, household no change <br>• Social distancing measures are **lifted after 200 days** <br>• COVID-19 Basic Reproduction Number (R0) follows a normal distribution with mean 2.5 and sd 0.25 <br>• Start date of infection is 12-03-2020 <br>• Population of 2.4 Million People | 2020-08 | 2021-04 |
+| Scenario 4.2: Strong Broad Social distancing limited to 100 days | • Factor of contact is **f≈0.6** <br>• Contacts break down: 25% household, 40% school/work, and 35% broader community <br>• Reduced contact due to preventative measure: school by 90%, work by 65%, community by 65%, household no change <br>• Social distancing measures are **lifted after 100 days** <br>• COVID-19 Basic Reproduction Number (R0) follows a normal distribution with mean 2.5 and sd 0.25 <br>• Start date of infection is 12-03-2020 <br>• Population of 2.4 Million People | 2020-07 | 2020-11 |
+| Scenario 5c1: Slow 45-day social distancing | • Do nothing for the first 15 days <br>• Then implements very strong social distancing slowly, factor of contact decreases from **f=1.0** to **f=0.4** over 1 week <br>• Social distancing measures lifted at day 60 (**45 days** of social distancing) <br>• COVID-19 Basic Reproduction Number (R0) follows a normal distribution with mean 2.5 and sd 0.25 <br>• Start date of infection is 12-03-2020 <br>• Population of 2.4 Million People | 2020-08 | 2021-01 |
+| Scenario 5c2: Slow then very strong social distancing✝ | • Do nothing for the first 15 days <br>• Then implements very strong social distancing slowly, factor of contact decreases from **f=1.0** to **f=0.4** over 1 week <br>• Social distancing measures are lifted only when **infection stops or reaches population saturation** <br>• COVID-19 Basic Reproduction Number (R0) follows a normal distribution with mean 2.5 and sd 0.25 <br>• Start date of infection is 12-03-2020 <br>• Population of 2.4 Million People | 2020-03 | 2020-06 |
+
+*Infection considered stopped when monthly infection falls below 100.
+<br>
 ✝Scenario 5c2 is a outbreak prevented scenario where infection never reaches population saturation.
 
 
 ```{r, echo=FALSE, message=FALSE}
+
+times=0:400
+nReps=50
+
+# get all data
+
+# mydf_1_d=getAllCasesbyDay2(tt2[[1]],times,nReps)
+# write.csv(mydf_1_d, 'test.csv')
+
+mydf_1=getEverInfbyDay(tt2[[1]],times,nReps)
+mydf_1$N=bpars[[1]]$N
+mydf_1$scen='scen1_noSocDist'
+
+mydf_2=getEverInfbyDay(tt2[[2]],times,nReps)
+mydf_2$N=bpars[[2]]$N
+mydf_2$scen='scen2_mdSocDist'
+
+mydf_3=getEverInfbyDay(tt2[[3]],times,nReps)
+mydf_3$N=bpars[[3]]$N
+mydf_3$scen='scen3_hiSocDist'
+
+mydf_41=getEverInfbyDay(scn41sol,times,nReps)
+mydf_41$N=N
+mydf_41$scen='scen41_200daysHiSocDist'
+
+mydf_42=getEverInfbyDay(scn42sol,times,nReps)
+mydf_42$N=N
+mydf_42$scen='scen42_100daysHiSocDist'
+
+mydf_5c1=getEverInfbyDay(scen5c1sol,times,nReps)
+mydf_5c1$N=N
+mydf_5c1$scen='scen5c1_45daysSlSocDist'
+
+mydf_5c2=getEverInfbyDay(scen5c2sol,times,nReps)
+mydf_5c2$N=N
+mydf_5c2$scen='scen5c2_slHiSocDist'
+
+
 # combine all data
 mydf_combined = rbind(mydf_1, mydf_2)
 mydf_combined = rbind(mydf_combined, mydf_3)
@@ -813,8 +712,9 @@ mydf_combined = rbind(mydf_combined, mydf_42)
 mydf_combined = rbind(mydf_combined, mydf_5c1)
 mydf_combined = rbind(mydf_combined, mydf_5c2)
 
+
 # get summary data by month
-summarydf = mydf_combined %>%
+mydf_combined_monthly = mydf_combined %>%
   mutate(month = format(dates, "%Y-%m")) %>%
   group_by(scen, month) %>%
   summarise(
@@ -824,12 +724,17 @@ summarydf = mydf_combined %>%
     med_infection = last(median)
   ) %>%
   ungroup() %>%
-  group_by(scen) %>% 
-  mutate(new_infection_monthly = lead(med_infection) - med_infection) %>% 
-  ungroup() %>% 
-  filter(!is.na(new_infection_monthly))
+  group_by(scen) %>%
+  mutate(
+    lag_med_infection = lag(med_infection),
+    lag_med_infection = if_else(is.na(lag_med_infection), 0, lag_med_infection),
+    new_infection_monthly = med_infection - lag_med_infection
+  ) %>%
+  select(-lag_med_infection) %>%
+  ungroup()
 
-write.csv(summarydf, 'data_output/covid19_all_scen_summary.csv', row.names=FALSE)
+write_xlsx(mydf_combined, "data_output/covid19_all_scen_daily.xlsx")
+write_xlsx(mydf_combined_monthly, "data_output/covid19_all_scen_monthly.xlsx")
 ```
 
 <center>
@@ -860,5 +765,12 @@ ggplot(
 <br></br>
 
 
-**Download data export of cumulative and new infection by month for all scenarios [here](data_output/covid19_all_scen_summary.csv)**
+## Download Daily Data
+
+**Download data export of cumulative infection by day for all scenarios: [covid19_all_scen_daily.xlsx](data_output/covid19_all_scen_daily.xlsx)**
+
+
+## Download Summary Data
+
+**Download data export of cumulative and new infection by month for all scenarios: [covid19_all_scen_monthly.xlsx](data_output/covid19_all_scen_monthly.xlsx)**
 
