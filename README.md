@@ -6,3 +6,4 @@ for visualising the time scale and peak size based on what we know to date (~mid
 
 To see the html file, visit http://htmlpreview.github.io/?https://github.com/carolinecolijn/SimpleSocialDistancing/blob/master/SimpleSocialDistanceModel.html
 
+A shiny app for investigating different social distancing scenarios using the model is at: https://magpiegroup.shinyapps.io/distancingModel/
