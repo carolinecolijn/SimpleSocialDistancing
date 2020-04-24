@@ -21,13 +21,6 @@ dynamics of respiratory viruses. This model has the advantage that it does not r
 
 LIMITATIONS: This model does not have age or contact structure and assumes that the population mixes evenly. We have made guesses about the fraction of contacts that different kinds of activities might represent. These are loosely based on the Imperial College London Report 13, at https://www.imperial.ac.uk/media/imperial-college/medicine/sph/ide/gida-fellowships/Imperial-College-COVID19-NPI-modelling-16-03-2020.pdf. In that work the authors used a sophisticated model including households, workplaces, schools and communities. However it is not known what fraction of the COVID-19 transmission opportunities arise through different activities, nor how different age groups contribute to transmission. This model does not explicitly include individuals who may be infectious but never show symptoms. Parameter values are always uncertain (within reason) in any model. 
 
-### Creating Scenarios 
-
-Below three different scenarios of the model can be created and modified. Initially they are set with: 
-* Scenario A: no social distancing measures taken 
-* Scenario B: medium-scale social distancing
-* Scenario C: large-scale social distancing 
-
 ### More info 
 
 A more in depth description of the model is available [here](http://htmlpreview.github.io/?https://github.com/carolinecolijn/SimpleSocialDistancing/blob/master/SimpleSocialDistanceModel.html) and the code is available on [github](https://github.com/carolinecolijn/SimpleSocialDistancing).

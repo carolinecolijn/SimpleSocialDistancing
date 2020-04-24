@@ -5,30 +5,6 @@ library(gridExtra)
 library(lubridate)
 
 # model definition 
-# removed the with call to improve performance 
-socdistmodel <- function(t,state,pars,sdtiming) {
-  # with(as.list(c(state,pars)), { 
-  f = ifelse(sdtiming(t)==1, pars$f, 1) # if social distancing is on, use pars$f. Otherwise, f is 1. 
-  dSdt = -(pars[["R0"]]/(pars[["D"]]+1/pars[["k2"]]))*(state[["I"]]+state[["E2"]] + f*(state[["Id"]]+state[["E2d"]]))*state[["S"]]/pars[["N"]] - pars[["r"]]*state[["S"]] + pars[["ur"]]*state[["Sd"]]
-  dE1dt = (pars[["R0"]]/(pars[["D"]]+1/pars[["k2"]]))*(state[["I"]]+state[["E2"]] + f*(state[["Id"]]+state[["E2d"]]))*state[["S"]]/pars[["N"]] - pars[["k1"]]*state[["E1"]] -pars[["r"]]*state[["E1"]] + pars[["ur"]]*state[["E1d"]]
-  dE2dt = pars[["k1"]]*state[["E1"]] -pars[["k2"]]*state[["E2"]] -pars[["r"]]*state[["E2"]] + pars[["ur"]]*state[["E2d"]]
-  dIdt = pars[["k2"]]*state[["E2"]] - pars[["q"]]*state[["I"]] -  state[["I"]]/pars[["D"]] - pars[["r"]]*state[["I"]]+ pars[["ur"]]*state[["Id"]]
-  dQdt = pars[["q"]]*state[["I"]] - state[["Q"]]/pars[["D"]] -pars[["r"]]*state[["Q"]] + pars[["ur"]]*state[["Qd"]]
-  dRdt = state[["I"]]/pars[["D"]] + state[["Q"]]/pars[["D"]] -pars[["r"]]*state[["R"]]+pars[["ur"]]*state[["Rd"]]
-  
-  dSddt = -(f*pars[["R0"]]/(pars[["D"]]+1/pars[["k2"]]))*(state[["I"]]+state[["E2"]] + f*(state[["Id"]]+state[["E2d"]]))*state[["Sd"]]/pars[["N"]] + pars[["r"]]*state[["S"]] -pars[["ur"]]*state[["Sd"]]
-  dE1ddt = (f*pars[["R0"]]/(pars[["D"]]+1/pars[["k2"]]))*(state[["I"]]+state[["E2"]] + f*(state[["Id"]]+state[["E2d"]]))*state[["Sd"]]/pars[["N"]] - pars[["k1"]]*state[["E1d"]] +pars[["r"]]*state[["E1"]] - pars[["ur"]]*state[["E1d"]]
-  dE2ddt = pars[["k1"]]*state[["E1d"]] - pars[["k2"]]*state[["E2d"]] + pars[["r"]]*state[["E2"]] - pars[["ur"]]*state[["E2d"]]
-  dIddt = pars[["k2"]]*state[["E2d"]] - pars[["q"]]*state[["Id"]]-  state[["Id"]]/pars[["D"]] + pars[["r"]]*state[["I"]] - pars[["ur"]]*state[["Id"]]
-  dQddt = pars[["q"]]*state[["Id"]] - state[["Qd"]]/pars[["D"]] +pars[["r"]]*state[["Q"]] - pars[["ur"]]*state[["Qd"]]
-  dRddt = state[["Id"]]/pars[["D"]]+state[["Qd"]]/pars[["D"]] +pars[["r"]]*state[["R"]] - pars[["ur"]]*state[["Rd"]]
-  # dRdt = I/pars["D"]]; dr + ds + di =0, S+I+R = pars["N"]] --> R = pars["N"]]-S-I and we eliminate R 
-  list(c(dSdt,dE1dt, dE2dt, dIdt, dQdt,dRdt, dSddt,dE1ddt, dE2ddt, dIddt, dQddt,dRddt ))
-  # })
-}
-
-
-# model definition 
 # socdistmodel <- function(t,state,pars,sdtiming) {
 #   with(as.list(c(state,pars)), { 
 #     f = ifelse(sdtiming(t)==1, pars$f, 1) # if social distancing is on, use pars$f. Otherwise, f is 1. 
@@ -50,6 +26,28 @@ socdistmodel <- function(t,state,pars,sdtiming) {
 #   })
 # }
 
+
+socdistmodel <- function(t,state,pars,sdtiming) {
+  # with(as.list(c(state,pars)), { 
+  f = ifelse(sdtiming(t)==1, pars$f, 1) # if social distancing is on, use pars$f. Otherwise, f is 1. 
+  dSdt = -(pars[["R0"]]/(pars[["D"]]+1/pars[["k2"]]))*(state[["I"]]+state[["E2"]] + f*(state[["Id"]]+state[["E2d"]]))*state[["S"]]/pars[["N"]] - pars[["r"]]*state[["S"]] + pars[["ur"]]*state[["Sd"]]
+  dE1dt = (pars[["R0"]]/(pars[["D"]]+1/pars[["k2"]]))*(state[["I"]]+state[["E2"]] + f*(state[["Id"]]+state[["E2d"]]))*state[["S"]]/pars[["N"]] - pars[["k1"]]*state[["E1"]] -pars[["r"]]*state[["E1"]] + pars[["ur"]]*state[["E1d"]]
+  dE2dt = pars[["k1"]]*state[["E1"]] -pars[["k2"]]*state[["E2"]] -pars[["r"]]*state[["E2"]] + pars[["ur"]]*state[["E2d"]]
+  dIdt = pars[["k2"]]*state[["E2"]] - pars[["q"]]*state[["I"]] -  state[["I"]]/pars[["D"]] - pars[["r"]]*state[["I"]]+ pars[["ur"]]*state[["Id"]]
+  dQdt = pars[["q"]]*state[["I"]] - state[["Q"]]/pars[["D"]] -pars[["r"]]*state[["Q"]] + pars[["ur"]]*state[["Qd"]]
+  dRdt = state[["I"]]/pars[["D"]] + state[["Q"]]/pars[["D"]] -pars[["r"]]*state[["R"]]+pars[["ur"]]*state[["Rd"]]
+  
+  dSddt = -(f*pars[["R0"]]/(pars[["D"]]+1/pars[["k2"]]))*(state[["I"]]+state[["E2"]] + f*(state[["Id"]]+state[["E2d"]]))*state[["Sd"]]/pars[["N"]] + pars[["r"]]*state[["S"]] -pars[["ur"]]*state[["Sd"]]
+  dE1ddt = (f*pars[["R0"]]/(pars[["D"]]+1/pars[["k2"]]))*(state[["I"]]+state[["E2"]] + f*(state[["Id"]]+state[["E2d"]]))*state[["Sd"]]/pars[["N"]] - pars[["k1"]]*state[["E1d"]] +pars[["r"]]*state[["E1"]] - pars[["ur"]]*state[["E1d"]]
+  dE2ddt = pars[["k1"]]*state[["E1d"]] - pars[["k2"]]*state[["E2d"]] + pars[["r"]]*state[["E2"]] - pars[["ur"]]*state[["E2d"]]
+  dIddt = pars[["k2"]]*state[["E2d"]] - pars[["q"]]*state[["Id"]]-  state[["Id"]]/pars[["D"]] + pars[["r"]]*state[["I"]] - pars[["ur"]]*state[["Id"]]
+  dQddt = pars[["q"]]*state[["Id"]] - state[["Qd"]]/pars[["D"]] +pars[["r"]]*state[["Q"]] - pars[["ur"]]*state[["Qd"]]
+  dRddt = state[["Id"]]/pars[["D"]]+state[["Qd"]]/pars[["D"]] +pars[["r"]]*state[["R"]] - pars[["ur"]]*state[["Rd"]]
+  # dRdt = I/pars["D"]]; dr + ds + di =0, S+I+R = pars["N"]] --> R = pars["N"]]-S-I and we eliminate R 
+  list(c(dSdt,dE1dt, dE2dt, dIdt, dQdt,dRdt, dSddt,dE1ddt, dE2ddt, dIddt, dQddt,dRddt ))
+  # })
+}
+
 # simulate the model 50 times; return a concatenated data frame 
 multisolve=function(params,timing,state,times,nReps) {
   # get random samples of R0
@@ -60,6 +58,39 @@ multisolve=function(params,timing,state,times,nReps) {
     thispars=params; thispars$R0=x;
     return( as.data.frame(ode(y= state, times=times,  func=socdistmodel, parms=thispars,sdtiming=timing)))})
   
+  names(biglist)=rs;
+  return(bind_rows(biglist, .id="R0"))
+}
+
+socdist2 <- function(t,state,pars,sdprofile) {
+  # with(as.list(c(state,pars)), { 
+  #f = ifelse(sdtiming(t)==1, pars$f, 1) # if social distancing is on, use pars$f. Otherwise, f is 1. 
+  f=sdprofile(t)
+  dSdt = -(pars[["R0"]]/(pars[["D"]]+1/pars[["k2"]]))*(state[["I"]]+state[["E2"]] + f*(state[["Id"]]+state[["E2d"]]))*state[["S"]]/pars[["N"]] - pars[["r"]]*state[["S"]] + pars[["ur"]]*state[["Sd"]]
+  dE1dt = (pars[["R0"]]/(pars[["D"]]+1/pars[["k2"]]))*(state[["I"]]+state[["E2"]] + f*(state[["Id"]]+state[["E2d"]]))*state[["S"]]/pars[["N"]] - pars[["k1"]]*state[["E1"]] -pars[["r"]]*state[["E1"]] + pars[["ur"]]*state[["E1d"]]
+  dE2dt = pars[["k1"]]*state[["E1"]] -pars[["k2"]]*state[["E2"]] -pars[["r"]]*state[["E2"]] + pars[["ur"]]*state[["E2d"]]
+  dIdt = pars[["k2"]]*state[["E2"]] - pars[["q"]]*state[["I"]] -  state[["I"]]/pars[["D"]] - pars[["r"]]*state[["I"]]+ pars[["ur"]]*state[["Id"]]
+  dQdt = pars[["q"]]*state[["I"]] - state[["Q"]]/pars[["D"]] -pars[["r"]]*state[["Q"]] + pars[["ur"]]*state[["Qd"]]
+  dRdt = state[["I"]]/pars[["D"]] + state[["Q"]]/pars[["D"]] -pars[["r"]]*state[["R"]]+pars[["ur"]]*state[["Rd"]]
+  
+  dSddt = -(f*pars[["R0"]]/(pars[["D"]]+1/pars[["k2"]]))*(state[["I"]]+state[["E2"]] + f*(state[["Id"]]+state[["E2d"]]))*state[["Sd"]]/pars[["N"]] + pars[["r"]]*state[["S"]] -pars[["ur"]]*state[["Sd"]]
+  dE1ddt = (f*pars[["R0"]]/(pars[["D"]]+1/pars[["k2"]]))*(state[["I"]]+state[["E2"]] + f*(state[["Id"]]+state[["E2d"]]))*state[["Sd"]]/pars[["N"]] - pars[["k1"]]*state[["E1d"]] +pars[["r"]]*state[["E1"]] - pars[["ur"]]*state[["E1d"]]
+  dE2ddt = pars[["k1"]]*state[["E1d"]] - pars[["k2"]]*state[["E2d"]] + pars[["r"]]*state[["E2"]] - pars[["ur"]]*state[["E2d"]]
+  dIddt = pars[["k2"]]*state[["E2d"]] - pars[["q"]]*state[["Id"]]-  state[["Id"]]/pars[["D"]] + pars[["r"]]*state[["I"]] - pars[["ur"]]*state[["Id"]]
+  dQddt = pars[["q"]]*state[["Id"]] - state[["Qd"]]/pars[["D"]] +pars[["r"]]*state[["Q"]] - pars[["ur"]]*state[["Qd"]]
+  dRddt = state[["Id"]]/pars[["D"]]+state[["Qd"]]/pars[["D"]] +pars[["r"]]*state[["R"]] - pars[["ur"]]*state[["Rd"]]
+  # dRdt = I/pars["D"]]; dr + ds + di =0, S+I+R = pars["N"]] --> R = pars["N"]]-S-I and we eliminate R 
+  list(c(dSdt,dE1dt, dE2dt, dIdt, dQdt,dRdt, dSddt,dE1ddt, dE2ddt, dIddt, dQddt,dRddt ))
+  # })
+}
+
+multisolve2=function(params,timing,state,times,nReps) {
+  # get random samples of R0
+  
+  rs=rnorm(nReps, mean = params$R0, sd=0.2)
+  biglist=lapply(rs, function(x) { 
+    thispars=params; thispars$R0=x; 
+    return( as.data.frame(ode(y= state, times=times,  func=socdist2, parms=thispars,sdprofile=timing)))})
   names(biglist)=rs;
   return(bind_rows(biglist, .id="R0"))
 }
